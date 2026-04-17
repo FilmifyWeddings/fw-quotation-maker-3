@@ -1,0 +1,1333 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useState, useEffect, useRef } from 'react';
+import { GoogleGenAI } from "@google/genai";
+import { 
+  collection, 
+  addDoc, 
+  query, 
+  where, 
+  orderBy, 
+  onSnapshot, 
+  getDocFromServer, 
+  doc, 
+  serverTimestamp,
+  setDoc,
+  deleteDoc
+} from 'firebase/firestore';
+import { 
+  signInWithPopup,
+  GoogleAuthProvider,
+  onAuthStateChanged, 
+  User 
+} from 'firebase/auth';
+import { 
+  Mic, 
+  Send, 
+  Printer, 
+  Save, 
+  History, 
+  Plus, 
+  Trash2, 
+  Loader2,
+  Calendar,
+  IndianRupee,
+  CheckCircle2,
+  AlertCircle,
+  Settings,
+  Menu,
+  X,
+  CreditCard,
+  FileText,
+  User as UserIcon,
+  ChevronRight,
+  QrCode
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { db, auth } from './firebase';
+import { QuotationState, QuotationFunction, TrainingRule } from './types';
+import { DEFAULT_QUOTATION, BLANK_QUOTATION, TERMS_AND_CONDITIONS, POLICY_SECTIONS } from './constants';
+import { cn } from './lib/utils';
+import { format } from 'date-fns';
+import { Image as ImageIcon, Move, Maximize2 } from 'lucide-react';
+
+// Editable Text Component for Manual Edits
+const EditableText = ({ 
+  value, 
+  onChange, 
+  className,
+  as: Component = 'span'
+}: { 
+  value: string; 
+  onChange: (val: string) => void; 
+  className?: string;
+  as?: any;
+}) => {
+  return (
+    <Component
+      contentEditable
+      suppressContentEditableWarning
+      className={cn(
+        "outline-none transition-all rounded transition-all duration-200 border-b border-dashed border-transparent", 
+        "hover:bg-[#5a5646]/10 hover:border-[#5a5646] focus:bg-[#5a5646]/10 focus:border-[#5a5646]",
+        className
+      )}
+      onBlur={(e: React.FocusEvent<HTMLElement>) => onChange(e.currentTarget.textContent || '')}
+    >
+      {value}
+    </Component>
+  );
+};
+
+// Error handling based on instructions
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: any;
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  // We throw a standardized error for debugging
+  throw new Error(JSON.stringify(errInfo));
+}
+
+const QuotationImage = ({ img, onUpdate, onRemove }: { img: any, onUpdate: (u: any) => void, onRemove: () => void, key?: any }) => {
+  return (
+    <div 
+      className="absolute group z-50 no-print"
+      style={{ 
+        left: `${img.x}%`, 
+        top: `${img.y}%`, 
+        width: `${img.width}px`,
+        cursor: 'move'
+      }}
+    >
+      <img src={img.url} className="w-full h-auto" referrerPolicy="no-referrer" />
+      <div className="absolute -top-10 left-0 hidden group-hover:flex items-center gap-2 bg-white/90 backdrop-blur p-1 rounded-lg shadow-xl border border-gray-100 scale-75 origin-top-left">
+          <button onClick={() => onUpdate({ x: Math.max(0, img.x - 1) })} className="p-1 hover:bg-gray-100 rounded text-gray-600"><Move size={12} /></button>
+          <input 
+            type="range" min="0" max="100" value={img.x} 
+            onChange={(e) => onUpdate({ x: parseInt(e.target.value) })}
+            className="w-16 h-1 accent-brand-green"
+          />
+          <input 
+            type="range" min="0" max="100" value={img.y} 
+            onChange={(e) => onUpdate({ y: parseInt(e.target.value) })}
+            className="w-16 h-1 accent-brand-green"
+          />
+          <input 
+            type="range" min="50" max="1000" value={img.width} 
+            onChange={(e) => onUpdate({ width: parseInt(e.target.value) })}
+            className="w-16 h-1 accent-brand-green"
+          />
+          <button onClick={onRemove} className="p-1 hover:bg-red-50 text-red-500 rounded"><Trash2 size={12} /></button>
+      </div>
+    </div>
+  );
+};
+
+const PrintImage = ({ img }: { img: any, key?: any }) => (
+  <div 
+    className="absolute z-50 only-print"
+    style={{ 
+      left: `${img.x}%`, 
+      top: `${img.y}%`, 
+      width: `${img.width}px`
+    }}
+  >
+    <img src={img.url} className="w-full h-auto" referrerPolicy="no-referrer" />
+  </div>
+);
+
+export default function App() {
+  const [user, setUser] = useState<User | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [quotation, setQuotation] = useState<QuotationState>({
+    ...DEFAULT_QUOTATION,
+    userId: '',
+    createdAt: new Date().toISOString()
+  });
+  const [history, setHistory] = useState<QuotationState[]>([]);
+  const [rules, setRules] = useState<TrainingRule[]>([]);
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [prompt, setPrompt] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [activeTab, setActiveTab] = useState<'ai' | 'settings' | 'history'>('ai');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [newRuleTrigger, setNewRuleTrigger] = useState('');
+  const [newRuleDeliverables, setNewRuleDeliverables] = useState('');
+
+  const recognitionRef = useRef<any>(null);
+
+  // Initialize Auth
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        setQuotation(prev => ({ ...prev, userId: currentUser.uid }));
+      }
+      setIsAuthReady(true);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Sync History
+  useEffect(() => {
+    if (!isAuthReady || !user) return;
+
+    const q = query(
+      collection(db, 'quotations'),
+      where('userId', '==', user.uid),
+      orderBy('createdAt', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as QuotationState));
+      setHistory(data);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'quotations');
+    });
+
+    return () => unsubscribe();
+  }, [isAuthReady, user]);
+
+  // Sync Training Rules
+  useEffect(() => {
+    if (!isAuthReady || !user) return;
+
+    const q = query(
+      collection(db, 'settings', user.uid, 'rules'),
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as TrainingRule));
+      setRules(data);
+    }, (error) => {
+      console.error("Rules sync failed:", error);
+    });
+
+    return () => unsubscribe();
+  }, [isAuthReady, user]);
+
+  // Voice Recognition Setup
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = false;
+      recognitionRef.current.interimResults = false;
+      recognitionRef.current.lang = 'en-IN';
+
+      recognitionRef.current.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setPrompt(transcript);
+        processAiCommand(transcript);
+      };
+
+      recognitionRef.current.onend = () => setIsListening(false);
+    }
+  }, []);
+
+  const toggleListening = () => {
+    if (isListening) {
+      recognitionRef.current?.stop();
+    } else {
+      setIsListening(true);
+      recognitionRef.current?.start();
+    }
+  };
+
+  const addRule = async () => {
+    if (!user || !newRuleTrigger || !newRuleDeliverables) return;
+    try {
+      const deliverables = newRuleDeliverables.split(',').map(d => d.trim()).filter(d => d);
+      await addDoc(collection(db, 'settings', user.uid, 'rules'), {
+        trigger: newRuleTrigger,
+        deliverables,
+        userId: user.uid,
+        createdAt: serverTimestamp()
+      });
+      setNewRuleTrigger('');
+      setNewRuleDeliverables('');
+    } catch (error) {
+      console.error("Add rule failed:", error);
+    }
+  };
+
+  const deleteRule = async (id: string) => {
+    if (!user) return;
+    try {
+      await deleteDoc(doc(db, 'settings', user.uid, 'rules', id));
+    } catch (error) {
+      console.error("Delete rule failed:", error);
+    }
+  };
+
+  const processAiCommand = async (input: string) => {
+    if (!input.trim() || isAiLoading) return;
+    setIsAiLoading(true);
+
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+      
+      const response = await ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        config: {
+          systemInstruction: `You are an expert quotation assistant for 'Filmify Weddings'. 
+          Update the current quotation state based on users natural language.
+          
+          SMART RULES (Crucial - If user mentions a trigger, apply corresponding deliverables):
+          ${rules.map(r => `- Trigger: "${r.trigger}" -> Add these deliverables: ${r.deliverables.join(', ')}`).join('\n')}
+
+          Guidelines:
+          1. Return a VALID JSON reflecting the UPDATED QuotationState.
+          2. Client name should be Title Case.
+          3. If amount is mentioned, update 'finalAmount'.
+          4. If events are mentioned, update the 'functions' array.
+          5. ALWAYS check against SMART RULES. If the user request matches a rule trigger (e.g., "Candid"), you MUST inject those deliverables into 'finalDeliverables' or 'preWeddingDeliverables'.
+          6. Preservation of existing structure is mandatory.`,
+          responseMimeType: "application/json"
+        },
+        contents: [
+          { role: 'user', parts: [{ text: `Current State: ${JSON.stringify(quotation)}` }] },
+          { role: 'user', parts: [{ text: `User request: ${input}` }] }
+        ]
+      });
+
+      const updatedData = JSON.parse(response.text || '{}');
+      setQuotation(prev => ({ ...prev, ...updatedData, userId: user?.uid }));
+      setPrompt('');
+    } catch (error) {
+      console.error("AI Logic Error:", error);
+      setStatus('error');
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const saveQuotation = async () => {
+    if (!user) return;
+    setStatus('saving');
+    try {
+      const dataToSave = {
+        ...quotation,
+        userId: user.uid,
+        createdAt: new Date().toISOString()
+      };
+      
+      if (quotation.id) {
+        await setDoc(doc(db, 'quotations', quotation.id), dataToSave);
+      } else {
+        const docRef = await addDoc(collection(db, 'quotations'), dataToSave);
+        setQuotation(prev => ({ ...prev, id: docRef.id }));
+      }
+      setStatus('saved');
+      setTimeout(() => setStatus('idle'), 2000);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'quotations');
+      setStatus('error');
+    }
+  };
+
+  const loadQuotation = (item: QuotationState) => {
+    setQuotation(item);
+    setShowHistory(false);
+  };
+
+  const createBlankQuotation = () => {
+    if (confirm("Start a new blank quotation? Current changes will be lost unless saved.")) {
+      setQuotation({
+        ...BLANK_QUOTATION,
+        userId: user?.uid || '',
+        createdAt: new Date().toISOString()
+      } as QuotationState);
+      setActiveTab('ai');
+    }
+  };
+
+  const addItem = (type: 'preWedding' | 'final') => {
+    if (type === 'preWedding') {
+      setQuotation({
+        ...quotation,
+        preWeddingDeliverables: [...quotation.preWeddingDeliverables, "NEW DELIVERABLE"]
+      });
+    } else {
+      setQuotation({
+        ...quotation,
+        finalDeliverables: [...quotation.finalDeliverables, "NEW DELIVARABLE"]
+      });
+    }
+  };
+
+  const removeItem = (type: 'preWedding' | 'final', index: number) => {
+    if (type === 'preWedding') {
+      const next = [...quotation.preWeddingDeliverables];
+      next.splice(index, 1);
+      setQuotation({ ...quotation, preWeddingDeliverables: next });
+    } else {
+      const next = [...quotation.finalDeliverables];
+      next.splice(index, 1);
+      setQuotation({ ...quotation, finalDeliverables: next });
+    }
+  };
+
+  const addFunction = () => {
+    setQuotation({
+      ...quotation,
+      functions: [
+        ...quotation.functions,
+        { date: "NEW DATE", name: "NEW EVENT", time: "TIME SLOT", services: ["Service 1"] }
+      ]
+    });
+  };
+
+  const removeFunction = (index: number) => {
+    const next = [...quotation.functions];
+    next.splice(index, 1);
+    setQuotation({ ...quotation, functions: next });
+  };
+
+  const addCustomImage = (url: string, page: number) => {
+    const newImg = {
+      id: Math.random().toString(36).substr(2, 9),
+      url,
+      x: 10,
+      y: 10,
+      width: 150,
+      page
+    };
+    setQuotation(prev => ({
+      ...prev,
+      customImages: [...(prev.customImages || []), newImg]
+    }));
+  };
+
+  const updateCustomImage = (id: string, updates: Partial<any>) => {
+    setQuotation(prev => ({
+      ...prev,
+      customImages: prev.customImages?.map(img => img.id === id ? { ...img, ...updates } : img)
+    }));
+  };
+
+  const removeCustomImage = (id: string) => {
+    setQuotation(prev => ({
+      ...prev,
+      customImages: prev.customImages?.filter(img => img.id !== id)
+    }));
+  };
+
+  const deleteQuotation = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (!confirm("Are you sure you want to delete this quotation?")) return;
+    try {
+      await deleteDoc(doc(db, 'quotations', id));
+      if (quotation.id === id) createNew();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, 'quotations');
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    const provider = new GoogleAuthProvider();
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (error) {
+      console.error("Login failed:", error);
+    }
+  };
+
+  const createNew = () => {
+    setQuotation({
+      ...DEFAULT_QUOTATION,
+      userId: user?.uid || '',
+      createdAt: new Date().toISOString()
+    });
+  };
+
+  if (!isAuthReady) {
+    return (
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-[#f4f3ef] text-brand-green">
+        <Loader2 className="animate-spin mb-4" size={48} />
+        <p className="font-serif animate-pulse">Initializing Filmify...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-[#f4f3ef] px-6 text-center">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="max-w-md w-full bg-white p-12 rounded-[3.5rem] shadow-2xl space-y-10"
+        >
+          <div className="flex flex-col items-center gap-4">
+             <div className="w-16 h-20 bg-brand-green flex items-center justify-center rounded-sm">
+                <span className="text-white font-serif text-3xl font-bold">F</span>
+             </div>
+             <h1 className="font-serif text-5xl tracking-[0.2em] text-brand-green font-bold uppercase">FILMIFY</h1>
+             <p className="text-[10px] tracking-[0.6em] text-gray-400 uppercase font-black -mt-2">Professional Quotations</p>
+          </div>
+          
+          <div className="space-y-6">
+            <h2 className="font-serif text-3xl text-brand-dark italic">Excellence Awaits</h2>
+            <p className="text-xs text-gray-500 leading-relaxed font-bold uppercase tracking-[0.2em]">
+              Connect your account to access cloud history, smart training rules, and premium design tools.
+            </p>
+          </div>
+
+          <button 
+            onClick={handleGoogleLogin}
+            className="w-full py-6 bg-brand-dark text-white rounded-full font-bold uppercase tracking-[0.3em] flex items-center justify-center gap-4 hover:bg-brand-green transition-all shadow-xl active:scale-95 text-xs hover:shadow-brand-green/20"
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24">
+              <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+              <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+              <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" />
+              <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+            </svg>
+            Continue with Google
+          </button>
+
+          <p className="text-[9px] text-gray-400 uppercase tracking-[0.4em] pt-4">
+            Secured by Google Identity
+          </p>
+        </motion.div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-screen bg-[#f4f3ef] overflow-hidden">
+      {/* Mobile Menu Button */}
+      <button 
+        onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+        className="fixed top-4 right-4 z-[100] p-3 bg-brand-green text-white rounded-2xl shadow-xl lg:hidden no-print"
+      >
+        {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+      </button>
+
+      {/* Sidebar Controls */}
+      <aside className={cn(
+        "fixed inset-y-0 left-0 z-[90] lg:relative lg:translate-x-0 transition-transform duration-300 w-96 bg-white border-r border-gray-200 flex flex-col no-print",
+        isMobileMenuOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full"
+      )}>
+        <div className="p-8 border-b border-gray-100 bg-brand-bg">
+          <div className="flex items-center gap-3">
+             <div className="w-10 h-10 bg-brand-olive flex items-center justify-center rounded-xl shadow-lg shadow-brand-olive/20">
+                <span className="text-white font-serif text-xl font-bold">F</span>
+             </div>
+             <div>
+                <h1 className="font-serif text-2xl font-bold text-brand-olive tracking-tight leading-none">Filmify Admin</h1>
+                <p className="text-[10px] text-gray-500 mt-1 uppercase tracking-widest font-bold">AI Quotation Dashboard</p>
+             </div>
+          </div>
+        </div>
+
+        {/* Tab Switcher */}
+        <div className="flex px-6 pt-6 gap-2">
+           {[
+             { id: 'ai', icon: Mic, label: 'Chat' },
+             { id: 'settings', icon: Settings, iconLabel: 'Train', label: 'Smart Rules' },
+             { id: 'history', icon: History, label: 'History' }
+           ].map(tab => (
+             <button
+               key={tab.id}
+               onClick={() => setActiveTab(tab.id as any)}
+               className={cn(
+                 "flex-1 py-3 px-2 rounded-2xl text-[10px] uppercase font-bold tracking-wider transition-all border flex flex-col items-center gap-1",
+                 activeTab === tab.id 
+                   ? "bg-brand-green text-white border-brand-green shadow-lg shadow-brand-green/20" 
+                   : "bg-gray-50 text-gray-400 border-gray-100 hover:bg-white"
+               )}
+             >
+               <tab.icon size={16} />
+               {tab.label}
+             </button>
+           ))}
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6">
+          <AnimatePresence mode="wait">
+             {activeTab === 'ai' && (
+               <motion.div 
+                 key="ai"
+                 initial={{ opacity: 0, x: -20 }}
+                 animate={{ opacity: 1, x: 0 }}
+                 exit={{ opacity: 0, x: 20 }}
+                 className="space-y-6"
+               >
+                 <div className="space-y-4">
+                    <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                       <CheckCircle2 size={12} className="text-brand-green" /> 
+                       Live Editing Active
+                    </h3>
+                    <button 
+                      onClick={createBlankQuotation}
+                      className="w-full p-4 border border-dashed border-gray-200 text-gray-400 rounded-3xl text-[9px] font-black uppercase tracking-[0.2em] hover:border-brand-green hover:text-brand-green transition-all flex items-center justify-center gap-2 no-print"
+                    >
+                       <Plus size={14} /> Start with Blank Template
+                    </button>
+                    <div className="relative">
+                      <textarea
+                        value={prompt}
+                        onChange={(e) => setPrompt(e.target.value)}
+                        placeholder="E.g. 'Rahul, 1.5L, Haldi 1 Jan, apply Cinematic rules...'"
+                        className="w-full h-40 p-5 text-sm bg-gray-50 border border-gray-200 rounded-[2rem] focus:ring-4 focus:ring-brand-green/10 focus:border-brand-green transition-all pr-14 shadow-inner"
+                      />
+                      <button 
+                        onClick={toggleListening}
+                        className={cn(
+                          "absolute right-4 top-4 p-3 rounded-2xl transition-all shadow-sm",
+                          isListening ? "bg-red-500 text-white animate-pulse scale-110" : "bg-white text-gray-400 hover:text-brand-green"
+                        )}
+                      >
+                        <Mic size={20} />
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => processAiCommand(prompt)}
+                      disabled={!prompt.trim() || isAiLoading}
+                      className="w-full py-5 bg-brand-green text-white rounded-[2rem] font-bold text-sm shadow-xl shadow-brand-green/30 hover:shadow-brand-green/40 active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+                    >
+                      {isAiLoading ? <Loader2 className="animate-spin" size={20} /> : <Send size={20} />}
+                      {isAiLoading ? 'AI is dreaming...' : 'Update Quotation'}
+                    </button>
+                    
+                    {/* Visual Assets Manager */}
+                    <div className="space-y-4 pt-6 border-t border-gray-100">
+                       <div className="flex items-center justify-between">
+                          <h4 className="text-[10px] font-black tracking-widest text-gray-400 uppercase flex items-center gap-2">
+                             <ImageIcon size={12} className="text-brand-green" /> Visual Assets
+                          </h4>
+                          <button 
+                            onClick={() => {
+                              const url = window.prompt("Enter Image/PNG URL:", "");
+                              if (url) addCustomImage(url, 0);
+                            }}
+                            className="p-1 px-3 bg-brand-green/5 text-brand-green rounded-full text-[8px] font-black uppercase hover:bg-brand-green hover:text-white transition-all shadow-sm"
+                          >
+                             Add PNG/Image
+                          </button>
+                       </div>
+                       
+                       <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                          {quotation.customImages?.map(img => (
+                             <div key={img.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-2xl border border-gray-100 group">
+                                <img src={img.url} className="w-8 h-8 rounded-lg object-cover bg-white shadow-sm" referrerPolicy="no-referrer" />
+                                <div className="flex-1 min-w-0">
+                                   <select 
+                                     value={img.page} 
+                                     onChange={(e) => updateCustomImage(img.id, { page: parseInt(e.target.value) })}
+                                     className="w-full text-[8px] font-black uppercase text-brand-green bg-transparent border-none appearance-none cursor-pointer"
+                                   >
+                                      {[0,1,2,3,4,5].map(p => <option key={p} value={p}>Page {p+1}</option>)}
+                                   </select>
+                                </div>
+                                <button onClick={() => removeCustomImage(img.id)} className="opacity-0 group-hover:opacity-100 p-2 text-red-300 hover:text-red-500 transition-all">
+                                   <Trash2 size={12} />
+                                </button>
+                             </div>
+                          ))}
+                          {(!quotation.customImages || quotation.customImages.length === 0) && (
+                            <p className="text-[9px] text-gray-400 text-center py-4 italic border border-dashed border-gray-100 rounded-2xl">No custom assets added yet</p>
+                          )}
+                       </div>
+                    </div>
+                 </div>
+
+                 <div className="grid grid-cols-2 gap-4">
+                    <button 
+                      onClick={saveQuotation}
+                      className="p-5 bg-gray-900 text-white rounded-[2rem] flex flex-col items-center gap-2 hover:bg-black transition-all shadow-lg hover:shadow-xl"
+                    >
+                      {status === 'saving' ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
+                      <span className="text-[10px] uppercase font-bold tracking-widest">
+                        {status === 'saved' ? 'Saved' : 'Save'}
+                      </span>
+                    </button>
+                    <button 
+                      onClick={() => window.print()}
+                      className="p-5 bg-white border border-gray-100 rounded-[2rem] flex flex-col items-center gap-2 hover:bg-gray-50 transition-all shadow-sm group"
+                    >
+                      <Printer size={20} className="group-hover:text-brand-green transition-colors" />
+                      <span className="text-[10px] uppercase font-bold tracking-widest text-gray-500">PDF Export</span>
+                    </button>
+                 </div>
+               </motion.div>
+             )}
+
+             {activeTab === 'settings' && (
+               <motion.div 
+                 key="settings"
+                 initial={{ opacity: 0, x: -20 }}
+                 animate={{ opacity: 1, x: 0 }}
+                 exit={{ opacity: 0, x: 20 }}
+                 className="space-y-8"
+               >
+                 <div className="p-6 bg-brand-green/5 rounded-[2rem] border border-brand-green/10">
+                    <h3 className="text-xs font-bold text-brand-green uppercase tracking-widest mb-4">Train Your AI</h3>
+                    <div className="space-y-4">
+                       <input 
+                         type="text"
+                         value={newRuleTrigger}
+                         onChange={(e) => setNewRuleTrigger(e.target.value)}
+                         placeholder="Keyword (e.g. Cinematic)"
+                         className="w-full p-4 bg-white border border-gray-100 rounded-2xl text-sm focus:ring-2 focus:ring-brand-green transition-all"
+                       />
+                       <textarea 
+                         value={newRuleDeliverables}
+                         onChange={(e) => setNewRuleDeliverables(e.target.value)}
+                         placeholder="Deliverables (comma separated)"
+                         className="w-full h-24 p-4 bg-white border border-gray-100 rounded-2xl text-sm focus:ring-2 focus:ring-brand-green transition-all resize-none"
+                       />
+                       <button 
+                         onClick={addRule}
+                         className="w-full py-4 bg-brand-green text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-brand-green/20"
+                       >
+                         Add Smart Rule
+                       </button>
+                    </div>
+                 </div>
+
+                 <div className="space-y-4">
+                    <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Active Rules</h4>
+                    {rules.length === 0 ? (
+                       <p className="text-xs text-gray-400 italic text-center py-6">No rules added yet...</p>
+                    ) : (
+                      rules.map(rule => (
+                        <div key={rule.id} className="p-4 bg-white border border-gray-100 rounded-2xl flex items-start justify-between group shadow-sm">
+                           <div>
+                              <p className="text-xs font-bold text-brand-green uppercase tracking-wider">{rule.trigger}</p>
+                              <p className="text-[10px] text-gray-500 mt-1">{rule.deliverables.join(', ')}</p>
+                           </div>
+                           <button onClick={() => deleteRule(rule.id!)} className="text-gray-300 hover:text-red-500 transition-colors">
+                              <Trash2 size={14} />
+                           </button>
+                        </div>
+                      ))
+                    )}
+                 </div>
+               </motion.div>
+             )}
+
+             {activeTab === 'history' && (
+                <motion.div 
+                  key="history_tab"
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  className="space-y-3"
+                >
+                  <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4">Recent Quotations</h3>
+                  {history.length === 0 ? (
+                    <div className="py-20 text-center text-gray-400 italic">No history found...</div>
+                  ) : (
+                    history.map((item) => (
+                      <div 
+                        key={item.id}
+                        onClick={() => loadQuotation(item)}
+                        className="p-4 bg-gray-50 border border-gray-100 rounded-2xl hover:bg-white hover:shadow-lg transition-all cursor-pointer group flex items-center justify-between"
+                      >
+                        <div>
+                          <h4 className="font-serif text-lg text-brand-dark group-hover:text-brand-green transition-colors">{item.clientName}</h4>
+                          <div className="flex items-center gap-4 mt-1">
+                            <p className="text-[10px] font-bold text-gray-400 flex items-center gap-1">
+                              <Calendar size={10} /> {format(new Date(item.createdAt), 'dd MMM yyyy')}
+                            </p>
+                            <p className="text-[10px] font-bold text-brand-green flex items-center gap-1 uppercase">
+                              ₹ {new Intl.NumberFormat('en-IN').format(item.finalAmount)}
+                            </p>
+                          </div>
+                        </div>
+                        <ChevronRight size={18} className="text-gray-300 group-hover:text-brand-green transition-all translate-x-1" />
+                      </div>
+                    ))
+                  )}
+                </motion.div>
+             )}
+          </AnimatePresence>
+        </div>
+
+        {/* Status Bar */}
+        <div className="p-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className={cn("w-2 h-2 rounded-full", user ? "bg-green-500" : "bg-amber-500")} />
+            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+              {user ? 'Cloud Sync Active' : 'Connecting...'}
+            </span>
+          </div>
+          {status === 'error' && (
+            <div className="flex items-center gap-1 text-red-500">
+              <AlertCircle size={12} />
+              <span className="text-[10px] font-bold">Error</span>
+            </div>
+          )}
+        </div>
+      </aside>
+
+      {/* Main Preview Container */}
+      <main className="flex-1 bg-[#e5e5e5] overflow-y-auto page-container scroll-smooth">
+        <div className="max-w-[210mm] mx-auto py-12 space-y-8 no-print px-4">
+           <div className="px-8 py-6 bg-amber-50 border border-amber-200 rounded-[2.5rem] flex items-center gap-4 text-amber-700 text-sm font-bold uppercase tracking-widest shadow-xl">
+              <div className="w-10 h-10 bg-amber-200 rounded-full flex items-center justify-center shrink-0">
+                <AlertCircle size={20} /> 
+              </div>
+              <p>Pro Tip: Tap any text in the preview to edit manually. AI learns from your changes.</p>
+           </div>
+        </div>
+
+        <div className="max-w-[210mm] mx-auto space-y-0 shadow-2xl mb-20 print:m-0 print:shadow-none bg-[#f4f3ef]">
+          {/* PAGE 1: COVER */}
+          <section className="quotation-page flex flex-col items-center justify-start min-h-[297mm] relative pt-32 pb-0">
+            {/* Texture Overlay */}
+            <div className="absolute inset-0 z-0 pointer-events-none opacity-[0.03]" style={{ backgroundImage: "url('https://www.transparenttextures.com/patterns/cream-paper.png')" }} />
+            
+            {quotation.customImages?.filter(img => img.page === 0).map(img => (
+                <div key={img.id} className="z-50">
+                  <QuotationImage img={img} onUpdate={(u) => updateCustomImage(img.id, u)} onRemove={() => removeCustomImage(img.id)} />
+                  <PrintImage img={img} />
+                </div>
+            ))}
+            
+            <div className="relative z-10 w-full text-center space-y-32">
+                <EditableText
+                  as="h1"
+                  value={quotation.clientName}
+                  onChange={(val) => setQuotation({ ...quotation, clientName: val.toUpperCase() })}
+                  className="font-serif text-[130px] md:text-[180px] tracking-[0.1em] text-brand-olive uppercase leading-none font-bold italic"
+                />
+                
+                <div className="space-y-6">
+                  <h2 className="font-serif text-3xl md:text-5xl tracking-[0.3em] text-brand-olive uppercase font-medium">PRE-WEDDING & WEDDING</h2>
+                  <h3 className="font-serif text-4xl md:text-6xl tracking-[0.45em] text-brand-olive uppercase font-bold">QUOTATION</h3>
+                  <p className="text-xl md:text-2xl tracking-[1em] text-brand-olive/60 uppercase font-black">BOTH SIDE</p>
+                </div>
+            </div>
+
+            {/* Logo/Branding Centered Spacer - User will place PNG Logo here using Assets */}
+            <div className="relative z-10 flex-1 flex flex-col items-center justify-center w-full min-h-[250px]">
+               {/* This area is the intended spot for custom Asset logo */}
+            </div>
+
+            {/* Bottom Image Area - Matches user's image placement */}
+            <div className="relative z-10 w-full max-w-5xl mx-auto px-0 pb-0 mt-auto overflow-hidden">
+               <div className="aspect-[4/5] w-full overflow-hidden relative">
+                  <EditableText
+                    value={quotation.coverImage || "https://images.unsplash.com/photo-1542045890-484196d42f53?auto=format&fit=crop&q=80&w=1200"}
+                    onChange={(val) => setQuotation({ ...quotation, coverImage: val })}
+                    className="absolute top-4 right-4 z-20 text-[10px] bg-brand-olive text-white p-3 rounded-full no-print opacity-0 hover:opacity-100 transition-opacity font-bold uppercase tracking-widest shadow-xl"
+                  />
+                  <img 
+                    src={quotation.coverImage || "https://images.unsplash.com/photo-1542045890-484196d42f53?auto=format&fit=crop&q=80&w=1200"} 
+                    className="w-full h-full object-cover grayscale-[0.1] contrast-[1.1]" 
+                    referrerPolicy="no-referrer" 
+                  />
+               </div>
+            </div>
+          </section>
+
+          {/* PAGE 2: ABOUT US */}
+          <section className="quotation-page flex flex-col min-h-[297mm] relative overflow-hidden">
+            {quotation.customImages?.filter(img => img.page === 1).map(img => (
+                <div key={img.id}>
+                  <QuotationImage img={img} onUpdate={(u) => updateCustomImage(img.id, u)} onRemove={() => removeCustomImage(img.id)} />
+                  <PrintImage img={img} />
+                </div>
+            ))}
+            
+            <div className="flex flex-col md:flex-row gap-16 mt-20">
+                <div className="flex-1 space-y-12">
+                    <div className="space-y-4">
+                        <p className="text-[10px] tracking-[0.5em] text-brand-accent font-bold uppercase">The Storytellers</p>
+                        <h2 className="font-serif text-6xl text-brand-olive leading-tight">About<br/>Our Craft</h2>
+                    </div>
+                    
+                    <div className="relative pl-12">
+                        <div className="absolute left-0 top-0 text-7xl text-brand-olive/20 font-serif">"</div>
+                        <p className="text-sm leading-relaxed text-gray-600 italic">
+                          Filmify films strive to capture your love story in the most gracious way possible. 
+                          All the memories of your event will be hand-picked with precision and made into 
+                          films & photographs that you can cherish forever. Every frame we capture is a 
+                          testament to the unique bond you share.
+                        </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-8 pt-8 border-t border-brand-olive/10">
+                        <div className="space-y-2">
+                            <p className="text-[20px] font-serif text-brand-olive">500+</p>
+                            <p className="text-[8px] tracking-[0.2em] text-gray-400 font-bold uppercase">Weddings Shot</p>
+                        </div>
+                        <div className="space-y-2">
+                            <p className="text-[20px] font-serif text-brand-olive">24/7</p>
+                            <p className="text-[8px] tracking-[0.2em] text-gray-400 font-bold uppercase">Global Support</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div className="flex-1 relative">
+                    <img 
+                        src="https://images.unsplash.com/photo-1515934751635-c81c6bc9a2d8?auto=format&fit=crop&q=80&w=800" 
+                        className="w-full tall-portrait shadow-2xl" 
+                        referrerPolicy="no-referrer" 
+                    />
+                    <div className="absolute -bottom-10 -left-10 w-48 h-64 border-2 border-brand-olive/20 -z-10 bg-brand-bg shadow-lg"></div>
+                </div>
+            </div>
+
+            <div className="mt-32 flex gap-12 items-center">
+                <div className="w-1/3">
+                    <img 
+                        src="https://images.unsplash.com/photo-1591604466107-ec97de577aff?auto=format&fit=crop&q=80&w=600" 
+                        className="w-full h-64 object-cover rounded-sm grayscale shadow-xl" 
+                        referrerPolicy="no-referrer" 
+                    />
+                </div>
+                <div className="flex-1 space-y-6">
+                    <h3 className="font-serif text-3xl text-brand-olive italic">Authentic Moments</h3>
+                    <p className="text-xs text-gray-500 leading-relaxed">
+                        We don't just take pictures; we document emotions. Our candid style ensures that 
+                        every laughter, tear, and dance move is preserved in its truest form.
+                    </p>
+                    <div className="flex gap-4">
+                        <div className="w-2 h-2 rounded-full bg-brand-olive/30"></div>
+                        <div className="w-2 h-2 rounded-full bg-brand-olive/60"></div>
+                        <div className="w-2 h-2 rounded-full bg-brand-olive"></div>
+                    </div>
+                </div>
+            </div>
+          </section>
+
+          {/* PAGE 3: FUNCTIONS TIMELINE */}
+          <section className="quotation-page border-b border-gray-300 py-24 min-h-[297mm] relative">
+            {quotation.customImages?.filter(img => img.page === 2).map(img => (
+                <div key={img.id}>
+                  <QuotationImage img={img} onUpdate={(u) => updateCustomImage(img.id, u)} onRemove={() => removeCustomImage(img.id)} />
+                  <PrintImage img={img} />
+                </div>
+            ))}
+            <div className="flex flex-col items-center">
+                {/* Visual Header matching user image */}
+                <div className="flex items-center justify-center gap-10 w-full mb-24 px-12">
+                    <div className="h-[1.5px] flex-1 max-w-[170px] bg-brand-olive/30 relative">
+                       <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full border border-brand-olive bg-white" />
+                    </div>
+                    <h2 className="font-serif text-5xl tracking-[0.2em] text-brand-olive uppercase font-bold text-center">Functions</h2>
+                    <div className="h-[1.5px] flex-1 max-w-[170px] bg-brand-olive/30 relative">
+                       <div className="absolute left-0 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full border border-brand-olive bg-white" />
+                    </div>
+                    <button 
+                      onClick={addFunction}
+                      className="p-3 bg-brand-olive/5 text-brand-olive rounded-full hover:bg-brand-olive hover:text-white transition-all no-print ml-4"
+                    >
+                      <Plus size={20} />
+                    </button>
+                </div>
+
+                <div className="relative w-full">
+                    {/* Vertical Timeline Line */}
+                    <div className="absolute left-1/2 top-0 bottom-0 w-[1px] bg-brand-olive/10 -translate-x-1/2" />
+                    
+                    <div className="space-y-16 relative">
+                      {quotation.functions.map((func, index) => (
+                        <div key={index} className="relative w-full flex flex-col items-center text-center px-10">
+                            {/* The Dark Pill Header */}
+                            <div className="bg-brand-olive text-white px-12 py-5 rounded-[3rem] shadow-xl mb-10 relative group inline-block min-w-[340px]">
+                                <button 
+                                  onClick={() => removeFunction(index)}
+                                  className="absolute -top-3 -right-3 p-2 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity no-print shadow-xl"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                                <div className="flex flex-col gap-1 items-center">
+                                  <div className="flex items-center gap-3">
+                                      <EditableText 
+                                        value={func.date} 
+                                        onChange={(v) => {
+                                          const next = [...quotation.functions];
+                                          next[index].date = v;
+                                          setQuotation({ ...quotation, functions: next });
+                                        }}
+                                        className="text-2xl font-bold tracking-widest uppercase font-serif" 
+                                      />
+                                      <span className="opacity-40 select-none px-2">•</span>
+                                      <EditableText 
+                                          value={func.name} 
+                                          onChange={(v) => {
+                                            const next = [...quotation.functions];
+                                            next[index].name = v;
+                                            setQuotation({ ...quotation, functions: next });
+                                          }}
+                                          className="text-2xl font-bold tracking-widest uppercase font-serif" 
+                                        />
+                                  </div>
+                                  <EditableText 
+                                    value={func.time} 
+                                    onChange={(v) => {
+                                      const next = [...quotation.functions];
+                                      next[index].time = v;
+                                      setQuotation({ ...quotation, functions: next });
+                                    }}
+                                    className="text-[10px] tracking-[0.4em] font-black uppercase opacity-60" 
+                                  />
+                                </div>
+                            </div>
+                            
+                            {/* List of services underneath */}
+                            <ul className="space-y-4 max-w-xl mx-auto mb-8 relative">
+                                {func.services.map((s, si) => (
+                                  <li key={si} className="flex items-center justify-center gap-4 group">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-brand-accent/40 shrink-0 group-hover:bg-brand-olive transition-colors" />
+                                    <EditableText 
+                                      value={s}
+                                      onChange={(v) => {
+                                        const next = [...quotation.functions];
+                                        next[index].services[si] = v;
+                                        setQuotation({ ...quotation, functions: next });
+                                      }}
+                                      className="text-lg text-gray-700 font-medium tracking-wide"
+                                    />
+                                    <button 
+                                      onClick={() => {
+                                        const next = [...quotation.functions];
+                                        next[index].services.splice(si, 1);
+                                        setQuotation({ ...quotation, functions: next });
+                                      }}
+                                      className="opacity-0 group-hover:opacity-100 p-1 text-red-300 no-print hover:text-red-500"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </li>
+                                ))}
+                                <button 
+                                  onClick={() => {
+                                    const next = [...quotation.functions];
+                                    if (!next[index].services) next[index].services = [];
+                                    next[index].services.push("NEW SERVICE");
+                                    setQuotation({ ...quotation, functions: next });
+                                  }}
+                                  className="mx-auto block p-2 bg-gray-50 text-gray-300 rounded-full hover:bg-brand-olive hover:text-white transition-all no-print"
+                                >
+                                  <Plus size={12} />
+                                </button>
+                            </ul>
+                        </div>
+                      ))}
+                    </div>
+                </div>
+
+                {/* Deliverables divider section */}
+                <div className="w-full mt-32 space-y-16 px-12">
+                    <div className="flex items-center gap-8">
+                        <h3 className="font-serif text-5xl text-brand-olive font-bold tracking-[0.05em] shrink-0">Deliverables</h3>
+                        <div className="h-px flex-1 bg-brand-olive/10" />
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-20 gap-y-12 max-w-6xl mx-auto">
+                        {quotation.finalDeliverables.map((item, i) => (
+                           <div key={i} className="flex items-start gap-5 group border-b border-brand-olive/5 pb-6">
+                              <span className="text-[10px] font-black text-brand-olive/20 mt-1">{(i+1).toString().padStart(2, '0')}</span>
+                              <div className="flex-1 flex items-center justify-between gap-4">
+                                  <EditableText
+                                     value={item}
+                                     onChange={(val) => {
+                                       const next = [...quotation.finalDeliverables];
+                                       next[i] = val;
+                                       setQuotation({ ...quotation, finalDeliverables: next });
+                                     }}
+                                     className="flex-1 text-sm text-gray-600 font-medium leading-relaxed uppercase tracking-widest"
+                                  />
+                                  <button 
+                                    onClick={() => removeItem('final', i)}
+                                    className="opacity-0 group-hover:opacity-100 p-1 text-red-300 no-print hover:text-red-500"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                              </div>
+                           </div>
+                        ))}
+                    </div>
+                    <button 
+                      onClick={() => addItem('final')}
+                      className="mx-auto flex items-center gap-3 p-4 bg-brand-olive/5 text-brand-olive rounded-full font-black text-[10px] uppercase tracking-widest hover:bg-brand-olive hover:text-white transition-all no-print"
+                    >
+                      <Plus size={16} /> Add Deliverable
+                    </button>
+                </div>
+            </div>
+          </section>
+
+          {/* PAGE 4: INVESTMENT & PAYMENT */}
+          <section className="quotation-page flex flex-col py-32 min-h-[297mm] relative overflow-hidden">
+             {quotation.customImages?.filter(img => img.page === 3).map(img => (
+                <QuotationImage key={img.id} img={img} onUpdate={(u) => updateCustomImage(img.id, u)} onRemove={() => removeCustomImage(img.id)} />
+             ))}
+             {quotation.customImages?.filter(img => img.page === 3).map(img => (
+                <PrintImage key={img.id} img={img} />
+             ))}
+             
+             <div className="absolute inset-0 z-0 bg-cover bg-bottom opacity-[0.04] pointer-events-none" style={{ backgroundImage: "url('https://images.unsplash.com/photo-1582555172866-f73bb12a2ab3?auto=format&fit=crop&q=80&w=1200')" }} />
+             
+             <div className="relative z-10 space-y-32">
+                <div className="text-center space-y-16">
+                    <p className="text-[10px] tracking-[0.8em] text-brand-accent font-black uppercase">The Total Worth</p>
+                    <h2 className="font-serif text-7xl text-brand-olive leading-tight">Total<br/>Investment</h2>
+                    
+                    <div className="inline-block relative p-20 group">
+                        {/* Recursive Circles */}
+                        <div className="absolute inset-0 border border-brand-olive/10 rounded-full scale-110"></div>
+                        <div className="absolute inset-0 border border-brand-olive/20 rounded-full group-hover:scale-[1.02] transition-transform duration-1000" />
+                        <div className="flex flex-col items-center gap-4 bg-white/20 backdrop-blur-sm rounded-full p-20 border border-brand-olive/5 shadow-2xl">
+                            <span className="text-[10px] uppercase font-black tracking-[0.4em] text-gray-400">Project Value</span>
+                            <div className="flex items-center gap-4 text-brand-olive">
+                                <span className="font-serif text-3xl italic opacity-30">₹</span>
+                                <EditableText
+                                  value={new Intl.NumberFormat('en-IN').format(quotation.finalAmount)}
+                                  onChange={(val) => setQuotation({ ...quotation, finalAmount: parseInt(val.replace(/\D/g, '')) || 0 })}
+                                  className="font-serif text-8xl md:text-[10rem] font-black italic tracking-tighter"
+                                />
+                                <span className="font-serif text-3xl italic opacity-30">/-</span>
+                            </div>
+                        </div>
+                    </div>
+ </div>
+
+                <div className="space-y-10">
+                    <div className="bg-brand-olive py-5 px-10 flex justify-between items-center shadow-xl">
+                        <h2 className="font-serif text-xl tracking-[0.4em] text-white font-bold uppercase">Payment Schedule</h2>
+                    </div>
+
+                    <div className="px-4">
+                        <table className="w-full text-center border-collapse">
+                            <thead className="border-b border-brand-olive/20">
+                                <tr className="uppercase tracking-[0.3em] font-black text-[9px] text-brand-olive">
+                                    <th className="py-6 px-4">Milestone</th>
+                                    <th className="py-6 px-4">Percentage</th>
+                                    <th className="py-6 px-4">Amount</th>
+                                    <th className="py-6 px-4">Condition</th>
+                                </tr>
+                            </thead>
+                            <tbody className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
+                                <tr className="border-b border-gray-100">
+                                    <td className="py-8 px-4 text-brand-olive">Booking Advance</td>
+                                    <td className="py-8 px-4">30%</td>
+                                    <td className="py-8 px-4">₹{new Intl.NumberFormat('en-IN').format(quotation.finalAmount * 0.3)}</td>
+                                    <td className="py-8 px-4 text-[8px] text-gray-400">To secure the dates</td>
+                                </tr>
+                                <tr className="border-b border-gray-100">
+                                    <td className="py-8 px-4 text-brand-olive">Event Milestone</td>
+                                    <td className="py-8 px-4">40%</td>
+                                    <td className="py-8 px-4">₹{new Intl.NumberFormat('en-IN').format(quotation.finalAmount * 0.4)}</td>
+                                    <td className="py-8 px-4 text-[8px] text-gray-400">On Main Wedding Day</td>
+                                </tr>
+                                <tr>
+                                    <td className="py-8 px-4 text-brand-olive">Final Delivery</td>
+                                    <td className="py-8 px-4">30%</td>
+                                    <td className="py-8 px-4">₹{new Intl.NumberFormat('en-IN').format(quotation.finalAmount * 0.3)}</td>
+                                    <td className="py-8 px-4 text-[8px] text-gray-400">Before raw data handover</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                {/* Bank Details Box */}
+                <div className="p-12 border-2 border-brand-olive/10 bg-brand-bg rounded-sm flex flex-col md:flex-row gap-12 items-center">
+                    <div className="flex-1 space-y-6">
+                        <h4 className="font-serif text-2xl text-brand-olive">Banking & QR</h4>
+                        <div className="grid grid-cols-1 gap-4 text-[10px] tracking-widest font-bold uppercase">
+                            <p className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">A/C Name:</span> {quotation.bankDetails.accountName}</p>
+                            <p className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">A/C Number:</span> {quotation.bankDetails.accountNumber}</p>
+                            <p className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">IFSC Code:</span> {quotation.bankDetails.ifscCode}</p>
+                        </div>
+                    </div>
+                    <div className="w-40 h-40 bg-white p-4 shadow-xl flex flex-col items-center justify-center border border-gray-100">
+                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=upi://pay?pa=7400341574@upi&pn=Filmify%20Weddings" className="w-full mb-2" referrerPolicy="no-referrer" />
+                        <span className="text-[7px] font-black tracking-widest text-brand-olive">SCAN TO PAY</span>
+                    </div>
+                </div>
+             </div>
+          </section>
+
+          {/* PAGE 5: TERMS & CONDITIONS */}
+          <section className="quotation-page py-32 bg-brand-bg relative">
+             {quotation.customImages?.filter(img => img.page === 4).map(img => (
+                <div key={img.id}>
+                  <QuotationImage img={img} onUpdate={(u) => updateCustomImage(img.id, u)} onRemove={() => removeCustomImage(img.id)} />
+                  <PrintImage img={img} />
+                </div>
+             ))}
+
+             <div className="px-16 space-y-24">
+                <div className="flex items-baseline gap-6 border-b border-brand-olive/5 pb-10">
+                   <h2 className="font-serif text-5xl text-brand-olive uppercase tracking-[0.2em] font-bold shrink-0">Terms & Conditions</h2>
+                   <div className="h-px flex-1 bg-brand-olive/5" />
+                   <span className="text-[8px] font-black text-gray-300 uppercase tracking-[1em]">05</span>
+                </div>
+
+                <div className="grid grid-cols-1 gap-16">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-20 gap-y-12">
+                      {TERMS_AND_CONDITIONS.map((section, idx) => (
+                         <div key={idx} className="space-y-6">
+                            <h4 className="font-serif text-2xl text-brand-olive uppercase tracking-widest border-l-4 border-brand-olive/20 pl-6">{section.title}</h4>
+                            <ul className="space-y-4 pl-6">
+                               {section.items.map((item, i) => (
+                                  <li key={i} className="flex gap-4 group">
+                                     <span className="text-[9px] font-black text-brand-olive opacity-30 mt-1">{(i+1).toString().padStart(2, '0')}</span>
+                                     <p className="text-[11px] text-gray-600 font-medium leading-relaxed tracking-wide">{item}</p>
+                                  </li>
+                               ))}
+                            </ul>
+                         </div>
+                      ))}
+                    </div>
+                </div>
+             </div>
+          </section>
+
+          {/* PAGE 6: POLICIES & CLOSER */}
+          <section className="quotation-page flex flex-col py-32 bg-brand-dark text-white overflow-hidden relative">
+             {quotation.customImages?.filter(img => img.page === 5).map(img => (
+                <div key={img.id}>
+                  <QuotationImage img={img} onUpdate={(u) => updateCustomImage(img.id, u)} onRemove={() => removeCustomImage(img.id)} />
+                  <PrintImage img={img} />
+                </div>
+             ))}
+
+             <div className="absolute top-0 left-0 w-full h-full opacity-[0.03] pointer-events-none flex items-center justify-center">
+                <span className="font-serif text-[35vw] font-black uppercase tracking-tighter -rotate-12">FILMIFY</span>
+             </div>
+
+             <div className="relative z-10 px-16 space-y-32 h-full flex flex-col">
+                <div className="grid grid-cols-2 gap-20">
+                   {POLICY_SECTIONS.map((section, idx) => (
+                      <div key={idx} className="space-y-12">
+                         <h3 className="font-serif text-4xl text-brand-olive italic tracking-widest">{section.title}</h3>
+                         <ul className="space-y-8">
+                            {section.items.map((item, i) => (
+                               <li key={i} className="flex gap-6 group">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-brand-olive mt-3 shrink-0 group-hover:scale-150 transition-transform" />
+                                  <p className="text-[10px] text-white/50 font-black leading-loose uppercase tracking-[0.2em] group-hover:text-white transition-colors">{item}</p>
+                                </li>
+                            ))}
+                         </ul>
+                      </div>
+                   ))}
+                </div>
+
+                <div className="mt-auto space-y-24 w-full">
+                    <div className="text-center space-y-12">
+                         <h4 className="font-serif text-6xl md:text-7xl text-white leading-[1.1] font-light">
+                            Trust us to <br/> Capture your <br/><span className="italic text-brand-olive font-bold">Special Moments.</span>
+                         </h4>
+                         <div className="h-px w-24 bg-brand-olive mx-auto" />
+                    </div>
+
+                    <div className="flex flex-col items-center space-y-16 py-20 pb-32">
+                      <div className="text-center space-y-6">
+                        <motion.h2 
+                          initial={{ opacity: 0, y: 30 }}
+                          whileInView={{ opacity: 1, y: 0 }}
+                          className="font-serif text-9xl tracking-[0.3em] font-black uppercase opacity-10"
+                        >
+                           THANK YOU
+                        </motion.h2>
+                        <p className="text-[12px] tracking-[2em] text-brand-olive uppercase font-black mt-[-4rem]">FILMIFY WEDDINGS</p>
+                      </div>
+                    </div>
+                </div>
+             </div>
+          </section>
+        </div>
+      </main>
+
+      {/* History Modal */}
+      <AnimatePresence>
+        {showHistory && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 no-print"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white w-full max-w-xl rounded-3xl shadow-2xl flex flex-col max-h-[80vh]"
+            >
+              <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+                <h3 className="font-serif text-2xl text-brand-green">Saved <span className="italic">Quotations</span></h3>
+                <button onClick={() => setShowHistory(false)} className="text-gray-400 hover:text-brand-dark">
+                  <Plus className="rotate-45" size={24} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {history.length === 0 ? (
+                  <div className="py-20 text-center text-gray-400 italic">No quotations found...</div>
+                ) : (
+                  history.map((item) => (
+                    <div 
+                      key={item.id}
+                      onClick={() => loadQuotation(item)}
+                      className="p-4 bg-gray-50 border border-gray-100 rounded-2xl hover:bg-white hover:shadow-lg transition-all cursor-pointer group flex items-center justify-between"
+                    >
+                      <div>
+                        <h4 className="font-serif text-lg text-brand-dark group-hover:text-brand-green transition-colors">{item.clientName}</h4>
+                        <div className="flex items-center gap-4 mt-1">
+                          <p className="text-[10px] font-bold text-gray-400 flex items-center gap-1">
+                            <Calendar size={10} /> {format(new Date(item.createdAt), 'dd MMM yyyy')}
+                          </p>
+                          <p className="text-[10px] font-bold text-brand-green flex items-center gap-1 uppercase">
+                            <IndianRupee size={10} /> {new Intl.NumberFormat('en-IN').format(item.finalAmount)}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={(e) => deleteQuotation(e, item.id!)}
+                          className="p-2 text-gray-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                        <ChevronRight size={20} className="text-gray-300 group-hover:text-brand-green group-hover:translate-x-1 transition-all" />
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+

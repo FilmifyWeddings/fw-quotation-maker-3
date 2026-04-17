@@ -1,0 +1,77 @@
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-serif: "Playfair Display", serif;
+  --font-sans: "Montserrat", sans-serif;
+  --color-brand-bg: #f4f3ef;
+  --color-brand-olive: #5a5646;
+  --color-brand-accent: #6b705c;
+  --color-brand-dark: #333333;
+  --color-brand-footer: #806e53;
+}
+
+@layer base {
+  body {
+    @apply font-sans bg-gray-200 text-brand-dark;
+  }
+}
+
+@layer components {
+  .quotation-page {
+    @apply bg-brand-bg relative overflow-hidden;
+    width: 210mm;
+    max-width: 100%;
+    min-height: 297mm;
+    padding: 4rem 3rem;
+    background-image: url('https://www.transparenttextures.com/patterns/cream-paper.png');
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    margin: 0 auto;
+  }
+
+  /* Specific PDF Image Shapes */
+  .arch-image { 
+    @apply rounded-t-[12rem] object-cover border-b-0;
+  }
+  
+  .tall-portrait { 
+    @apply aspect-[3/4] object-cover rounded-sm;
+  }
+
+  [contenteditable="true"]:hover, [contenteditable="true"]:focus { 
+    background-color: rgba(90, 86, 70, 0.1); 
+    border-bottom: 1px dashed #5a5646; 
+    border-radius: 2px; 
+    outline: none;
+  }
+
+  @media (max-width: 768px) {
+    .quotation-page {
+      width: 100%;
+      min-height: auto;
+      padding: 2rem 1rem;
+    }
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  .quotation-page {
+    box-shadow: none !important;
+    margin: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    page-break-after: always;
+  }
+  .page-container {
+    padding: 0 !important;
+  }
+}
+

@@ -1,0 +1,82 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: quotations
+    // Document ID: auto-generated
+    // Fields:
+    //   - clientName: string (required, 1-100 chars)
+    //   - finalAmount: number (required, positive)
+    //   - preWeddingDeliverables: list of strings
+    //   - functions: list of maps (date, name, time, services)
+    //   - finalDeliverables: list of strings
+    //   - userId: string (required, owner UID)
+    //   - createdAt: string (required, ISO 8601)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    function isPositive(val) {
+      return val is number && val >= 0;
+    }
+
+    function isValidQuotation(data) {
+      return data.keys().hasAll(['clientName', 'finalAmount', 'userId', 'createdAt']) &&
+             data.clientName is string && data.clientName.size() > 0 && data.clientName.size() <= 100 &&
+             isPositive(data.finalAmount) &&
+             data.userId == request.auth.uid &&
+             isValidDateString(data.createdAt);
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "filmifyweddings@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /quotations/{quotationId} {
+      allow read: if isOwner(resource.data.userId);
+      allow create: if isAuthenticated() && isValidQuotation(request.resource.data);
+      allow update: if isOwner(resource.data.userId) && 
+                      isValidQuotation(request.resource.data) &&
+                      request.resource.data.userId == resource.data.userId &&
+                      request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isOwner(resource.data.userId);
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId) || isAdmin();
+    }
+
+    match /settings/{userId}/rules/{ruleId} {
+      allow read, write: if isOwner(userId);
+    }
+  }
+}

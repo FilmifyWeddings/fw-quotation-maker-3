@@ -1,0 +1,57 @@
+{
+  "entities": {
+    "Quotation": {
+      "title": "Quotation",
+      "description": "A wedding event quotation document",
+      "type": "object",
+      "properties": {
+        "clientName": { "type": "string", "description": "Name of the client" },
+        "finalAmount": { "type": "number", "description": "Total quotation amount" },
+        "preWeddingDeliverables": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "functions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "date": { "type": "string" },
+              "name": { "type": "string" },
+              "time": { "type": "string" },
+              "services": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "finalDeliverables": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "userId": { "type": "string", "description": "UID of the owner" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["clientName", "finalAmount", "userId", "createdAt"]
+    },
+    "TrainingRule": {
+      "title": "Training Rule",
+      "description": "User-defined rules for smart deliverable population",
+      "type": "object",
+      "properties": {
+        "trigger": { "type": "string" },
+        "deliverables": { "type": "array", "items": { "type": "string" } },
+        "userId": { "type": "string" }
+      },
+      "required": ["trigger", "deliverables", "userId"]
+    }
+  },
+  "firestore": {
+    "/quotations/{quotationId}": {
+      "schema": "Quotation",
+      "description": "Collection of wedding quotations"
+    },
+    "/settings/{userId}/rules/{ruleId}": {
+      "schema": "TrainingRule",
+      "description": "User specific training rules"
+    }
+  }
+}
