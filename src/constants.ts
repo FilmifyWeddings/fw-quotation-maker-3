@@ -71,7 +71,8 @@ export const DEFAULT_QUOTATION: Omit<QuotationState, "userId" | "createdAt"> = {
     upiId: "+91 7400341574"
   },
   coverImage: "https://images.unsplash.com/photo-1542045890-484196d42f53?auto=format&fit=crop&q=80&w=1200",
-  customImages: []
+  customImages: [],
+  customTextBlocks: []
 };
 
 export const TERMS_AND_CONDITIONS = [
@@ -116,6 +117,7 @@ export const BLANK_QUOTATION: Omit<QuotationState, "userId" | "createdAt"> = {
   finalDeliverables: [],
   coverImage: "",
   customImages: [],
+  customTextBlocks: [],
   bankDetails: {
     accountName: "FILMIFY WEDDINGS",
     accountNumber: "",

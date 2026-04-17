@@ -1,6 +1,6 @@
 {
   "name": "Filmify Smart Quotation AI",
-  "description": "Premium AI-powered wedding quotation generator with voice/text commands and multi-page printable designs.",
+  "description": "Premium Canva-like AI wedding quotation generator. Create pixel-perfect A4 designs, upload images directly, and update everything with voice commands.",
   "requestFramePermissions": [
     "microphone"
   ],

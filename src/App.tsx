@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { 
   collection, 
   addDoc, 
@@ -44,11 +44,14 @@ import {
   FileText,
   User as UserIcon,
   ChevronRight,
-  QrCode
+  QrCode,
+  Type as TypeIcon,
+  Upload,
+  Download
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, auth } from './firebase';
-import { QuotationState, QuotationFunction, TrainingRule, DesignSettings } from './types';
+import { QuotationState, QuotationFunction, TrainingRule, DesignSettings, CustomTextBlock } from './types';
 import { DEFAULT_DESIGN, DEFAULT_QUOTATION, BLANK_QUOTATION, TERMS_AND_CONDITIONS, POLICY_SECTIONS } from './constants';
 import { cn } from './lib/utils';
 import { format } from 'date-fns';
@@ -119,12 +122,24 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 }
 
 const QuotationImage = ({ img, onUpdate, onRemove }: { img: any, onUpdate: (u: any) => void, onRemove: () => void, key?: any }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        onUpdate({ url: reader.result as string });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   return (
     <motion.div 
       drag
       dragMomentum={false}
       onDragEnd={(_, info) => {
-        // Simplified position calculation based on A4 width/height
         const newX = Math.max(0, Math.min(95, img.x + (info.offset.x / 8))); 
         const newY = Math.max(0, Math.min(95, img.y + (info.offset.y / 11)));
         onUpdate({ x: newX, y: newY });
@@ -138,6 +153,13 @@ const QuotationImage = ({ img, onUpdate, onRemove }: { img: any, onUpdate: (u: a
       }}
     >
       <div className="relative group/canvas">
+        <input 
+          type="file" 
+          ref={fileInputRef} 
+          className="hidden" 
+          accept="image/*" 
+          onChange={handleFileChange} 
+        />
         <img 
           src={img.url} 
           className="w-full h-auto shadow-2xl ring-0 group-hover:ring-4 ring-brand-olive/20 transition-all rounded-sm" 
@@ -147,6 +169,15 @@ const QuotationImage = ({ img, onUpdate, onRemove }: { img: any, onUpdate: (u: a
         {/* Floating Toolbar */}
         <div className="absolute -top-16 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-white p-3 rounded-full shadow-2xl border border-gray-100 opacity-0 group-hover:opacity-100 transition-all scale-90 group-hover:scale-100 whitespace-nowrap">
           <button 
+             onClick={() => fileInputRef.current?.click()}
+             className="p-2 hover:bg-gray-100 rounded-full text-brand-olive transition-colors flex items-center gap-2 px-3"
+             title="Upload Image"
+          >
+             <Upload size={16} />
+             <span className="text-[9px] font-bold uppercase tracking-tight">Upload</span>
+          </button>
+          <div className="w-[1px] h-4 bg-gray-200" />
+          <button 
              onClick={() => {
                const url = window.prompt("Image URL:", img.url);
                if (url) onUpdate({ url });
@@ -154,7 +185,7 @@ const QuotationImage = ({ img, onUpdate, onRemove }: { img: any, onUpdate: (u: a
              className="p-2 hover:bg-gray-100 rounded-full text-brand-olive transition-colors flex items-center gap-2 px-3"
           >
              <ImageIcon size={16} />
-             <span className="text-[9px] font-bold uppercase tracking-tight">Replace Image</span>
+             <span className="text-[9px] font-bold uppercase tracking-tight">URL</span>
           </button>
           <div className="w-[1px] h-4 bg-gray-200" />
           <div className="flex items-center gap-2 px-2">
@@ -179,6 +210,83 @@ const QuotationImage = ({ img, onUpdate, onRemove }: { img: any, onUpdate: (u: a
     </motion.div>
   );
 };
+
+const QuotationTextBlock = ({ block, onUpdate, onRemove }: { block: CustomTextBlock, onUpdate: (u: Partial<CustomTextBlock>) => void, onRemove: () => void }) => {
+  return (
+    <motion.div 
+      drag
+      dragMomentum={false}
+      onDragEnd={(_, info) => {
+        const newX = Math.max(0, Math.min(95, block.x + (info.offset.x / 8))); 
+        const newY = Math.max(0, Math.min(95, block.y + (info.offset.y / 11)));
+        onUpdate({ x: newX, y: newY });
+      }}
+      className="absolute group z-[101] no-print"
+      style={{ 
+        left: `${block.x}%`, 
+        top: `${block.y}%`, 
+        cursor: 'move'
+      }}
+    >
+      <div className="relative">
+        <EditableText 
+          value={block.text}
+          onChange={(val) => onUpdate({ text: val })}
+          className="bg-transparent border-none min-w-[50px] inline-block"
+          style={{ 
+            fontSize: `${block.fontSize}px`,
+            fontWeight: block.fontWeight,
+            color: block.color,
+            fontFamily: block.fontFamily
+          }}
+        />
+
+        {/* Text Toolbar */}
+        <div className="absolute -top-12 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-white p-2 rounded-full shadow-2xl border border-gray-100 opacity-0 group-hover:opacity-100 transition-all scale-90 group-hover:scale-100 whitespace-nowrap z-[110]">
+           <button 
+             onClick={() => onUpdate({ fontWeight: block.fontWeight === 'bold' ? 'normal' : 'bold' })}
+             className={cn("p-1.5 rounded-full", block.fontWeight === 'bold' ? "bg-brand-olive text-white" : "hover:bg-gray-100")}
+           >
+             <span className="font-bold px-1">B</span>
+           </button>
+           <div className="flex items-center gap-1">
+             <span className="text-[7px] font-bold uppercase text-gray-400">Size</span>
+             <input 
+               type="range" min="10" max="150" value={block.fontSize}
+               onChange={(e) => onUpdate({ fontSize: parseInt(e.target.value) })}
+               className="w-16 accent-brand-olive h-1"
+             />
+           </div>
+           <input 
+             type="color" 
+             value={block.color} 
+             onChange={(e) => onUpdate({ color: e.target.value })}
+             className="w-6 h-6 border-0 p-0 overflow-hidden cursor-pointer rounded-full"
+           />
+           <button onClick={onRemove} className="p-1.5 hover:bg-red-50 text-red-400 rounded-full">
+              <Trash2 size={14} />
+           </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+};
+
+const PrintTextBlock = ({ block }: { block: CustomTextBlock }) => (
+  <div 
+    className="absolute z-[101] only-print"
+    style={{ 
+      left: `${block.x}%`, 
+      top: `${block.y}%`,
+      fontSize: `${block.fontSize}px`,
+      fontWeight: block.fontWeight,
+      color: block.color,
+      fontFamily: block.fontFamily
+    }}
+  >
+    {block.text}
+  </div>
+);
 
 const PrintImage = ({ img }: { img: any, key?: any }) => (
   <div 
@@ -325,18 +433,21 @@ export default function App() {
         model: "gemini-2.0-flash",
         config: {
           systemInstruction: `You are an expert quotation assistant for 'Filmify Weddings'. 
-          Update the current quotation state based on users natural language.
-          
-          SMART RULES (Crucial - If user mentions a trigger, apply corresponding deliverables):
-          ${rules.map(r => `- Trigger: "${r.trigger}" -> Add these deliverables: ${r.deliverables.join(', ')}`).join('\n')}
+          You act like a ChatGPT-style conversational assistant. 
+          When user speaks/types, update the quotation state and provide a brief confirmation.
 
-          Guidelines:
-          1. Return a VALID JSON reflecting the UPDATED QuotationState.
-          2. Client name should be Title Case.
-          3. If amount is mentioned, update 'finalAmount'.
-          4. If events are mentioned, update the 'functions' array.
-          5. ALWAYS check against SMART RULES. If the user request matches a rule trigger (e.g., "Candid"), you MUST inject those deliverables into 'finalDeliverables' or 'preWeddingDeliverables'.
-          6. Preservation of existing structure is mandatory.`,
+          SMART RULES (Deliverables based on keywords):
+          ${rules.map(r => `- "${r.trigger}" matches -> Add: ${r.deliverables.join(', ')}`).join('\n')}
+
+          CAPABILITIES:
+          1. Content: Update clientName, finalAmount, functions, deliverables.
+          2. Design: Update designSettings (primaryFont, accentColor). 
+             - Fonts available: 'Playfair Display', 'Libre Baskerville', 'Cormorant Garamond'.
+          3. Layout: You can add sections or change text dynamically.
+
+          OUTPUT REQUIREMENT:
+          Return a JSON object: { "status": "confirmation message", "updatedQuotation": { ...fullQuotationState } }
+          Ensure the output is ONLY valid JSON.`,
           responseMimeType: "application/json"
         },
         contents: [
@@ -345,8 +456,10 @@ export default function App() {
         ]
       });
 
-      const updatedData = JSON.parse(response.text || '{}');
-      setQuotation(prev => ({ ...prev, ...updatedData, userId: user?.uid }));
+      const result = JSON.parse(response.text || '{}');
+      if (result.updatedQuotation) {
+        setQuotation({ ...result.updatedQuotation, userId: user?.uid });
+      }
       setPrompt('');
     } catch (error) {
       console.error("AI Logic Error:", error);
@@ -442,6 +555,38 @@ export default function App() {
     }));
   };
 
+  const addCustomTextBlock = (page: number) => {
+    const newBlock: CustomTextBlock = {
+      id: Math.random().toString(36).substr(2, 9),
+      text: "New Text Block",
+      x: 20,
+      y: 20,
+      fontSize: 24,
+      fontWeight: 'normal',
+      color: '#5a5646',
+      fontFamily: quotation.designSettings?.primaryFont || "'Playfair Display', serif",
+      page
+    };
+    setQuotation(prev => ({
+      ...prev,
+      customTextBlocks: [...(prev.customTextBlocks || []), newBlock]
+    }));
+  };
+
+  const updateCustomTextBlock = (id: string, updates: Partial<CustomTextBlock>) => {
+    setQuotation(prev => ({
+      ...prev,
+      customTextBlocks: prev.customTextBlocks?.map(b => b.id === id ? { ...b, ...updates } : b)
+    }));
+  };
+
+  const removeCustomTextBlock = (id: string) => {
+    setQuotation(prev => ({
+      ...prev,
+      customTextBlocks: prev.customTextBlocks?.filter(b => b.id !== id)
+    }));
+  };
+
   const updateCustomImage = (id: string, updates: Partial<any>) => {
     setQuotation(prev => ({
       ...prev,
@@ -529,6 +674,13 @@ export default function App() {
                   <PrintImage img={img} />
                 </div>
             ))}
+
+            {quotation.customTextBlocks?.filter(b => b.page === 0).map(block => (
+                <div key={block.id} className="z-50">
+                  <QuotationTextBlock block={block} onUpdate={(u) => updateCustomTextBlock(block.id, u)} onRemove={() => removeCustomTextBlock(block.id)} />
+                  <PrintTextBlock block={block} />
+                </div>
+            ))}
       
       <div className="relative z-10 w-full text-center space-y-12 mt-20 px-12">
           <EditableText
@@ -590,10 +742,42 @@ export default function App() {
           }
           .page-container {
             font-size: ${(quotation.designSettings?.fontScale || 1) * 100}%;
+            width: 100%;
           }
-           @media print {
+          @media print {
+            body, html {
+              height: auto !important;
+              overflow: visible !important;
+              background-color: white !important;
+            }
+            .no-print {
+              display: none !important;
+            }
+            .only-print {
+              display: block !important;
+            }
+            .page-container {
+              width: 100% !important;
+              height: auto !important;
+              display: block !important;
+              overflow: visible !important;
+            }
             .quotation-page {
-              background-color: var(--color-brand-bg) !important;
+              width: 210mm !important;
+              height: 297mm !important;
+              min-height: 297mm !important;
+              page-break-after: always !important;
+              page-break-inside: avoid !important;
+              position: relative !important;
+              display: block !important;
+              background-color: white !important;
+              margin: 0 !important;
+              overflow: hidden !important;
+            }
+            main {
+              height: auto !important;
+              overflow: visible !important;
+              display: block !important;
             }
           }
         `}
@@ -839,14 +1023,38 @@ export default function App() {
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-[9px] font-bold text-gray-400 uppercase">Global Logo URL</label>
-                        <input 
-                          type="text"
-                          value={quotation.designSettings?.logoUrl}
-                          onChange={(e) => setQuotation({...quotation, designSettings: {...quotation.designSettings!, logoUrl: e.target.value}})}
-                          placeholder="https://..."
-                          className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl text-[10px] outline-none focus:ring-2 focus:ring-brand-olive"
-                        />
+                        <label className="text-[9px] font-bold text-gray-400 uppercase">Global Logo</label>
+                        <div className="flex gap-2">
+                          <input 
+                            type="text"
+                            value={quotation.designSettings?.logoUrl}
+                            onChange={(e) => setQuotation({...quotation, designSettings: {...quotation.designSettings!, logoUrl: e.target.value}})}
+                            placeholder="Logo URL..."
+                            className="flex-1 p-4 bg-gray-50 border border-gray-100 rounded-2xl text-[10px] outline-none focus:ring-2 focus:ring-brand-olive"
+                          />
+                          <button 
+                            onClick={() => {
+                              const input = document.createElement('input');
+                              input.type = 'file';
+                              input.accept = 'image/*';
+                              input.onchange = (e) => {
+                                const file = (e.target as HTMLInputElement).files?.[0];
+                                if (file) {
+                                  const reader = new FileReader();
+                                  reader.onload = () => {
+                                    setQuotation({...quotation, designSettings: {...quotation.designSettings!, logoUrl: reader.result as string}});
+                                  };
+                                  reader.readAsDataURL(file);
+                                }
+                              };
+                              input.click();
+                            }}
+                            className="p-4 bg-brand-olive text-white rounded-2xl hover:opacity-90 transition-opacity"
+                            title="Upload Logo"
+                          >
+                            <Upload size={16} />
+                          </button>
+                        </div>
                       </div>
 
                       <div className="space-y-4">
@@ -953,7 +1161,17 @@ export default function App() {
       </aside>
 
       {/* Main Preview Container */}
-      <main className="flex-1 bg-[#e5e5e5] overflow-y-auto page-container scroll-smooth">
+      <main className="flex-1 bg-[#e5e5e5] overflow-y-auto page-container scroll-smooth relative">
+        {/* Floating Print Action */}
+        <div className="fixed bottom-8 right-8 z-[200] no-print">
+           <button 
+             onClick={() => window.print()}
+             className="bg-brand-olive text-white p-6 rounded-full shadow-2xl hover:scale-110 active:scale-95 transition-all flex items-center gap-3 font-black uppercase tracking-[0.2em] text-xs"
+           >
+             <Download size={24} />
+             Download PDF (A4)
+           </button>
+        </div>
         <div className="max-w-[210mm] mx-auto py-12 space-y-8 no-print px-4">
            <div className="px-8 py-6 bg-amber-50 border border-amber-200 rounded-[2.5rem] flex items-center gap-4 text-amber-700 text-sm font-bold uppercase tracking-widest shadow-xl">
               <div className="w-10 h-10 bg-amber-200 rounded-full flex items-center justify-center shrink-0">
@@ -966,12 +1184,17 @@ export default function App() {
         <div className="page-container mb-20">
           {renderPage1()}
 
-          {/* PAGE 2: ABOUT US */}
-          <section className="quotation-page flex flex-col min-h-[297mm] relative overflow-hidden">
+          <section className="quotation-page flex flex-col min-h-[297mm] relative overflow-hidden bg-white p-20">
             {quotation.customImages?.filter(img => img.page === 1).map(img => (
                 <div key={img.id}>
                   <QuotationImage img={img} onUpdate={(u) => updateCustomImage(img.id, u)} onRemove={() => removeCustomImage(img.id)} />
                   <PrintImage img={img} />
+                </div>
+            ))}
+            {quotation.customTextBlocks?.filter(b => b.page === 1).map(block => (
+                <div key={block.id}>
+                  <QuotationTextBlock block={block} onUpdate={(u) => updateCustomTextBlock(block.id, u)} onRemove={() => removeCustomTextBlock(block.id)} />
+                  <PrintTextBlock block={block} />
                 </div>
             ))}
             
@@ -1038,11 +1261,17 @@ export default function App() {
           </section>
 
           {/* PAGE 3: FUNCTIONS TIMELINE */}
-          <section className="quotation-page border-b border-gray-300 py-24 min-h-[297mm] relative">
+          <section className="quotation-page py-24 min-h-[297mm] relative bg-white">
             {quotation.customImages?.filter(img => img.page === 2).map(img => (
                 <div key={img.id}>
                   <QuotationImage img={img} onUpdate={(u) => updateCustomImage(img.id, u)} onRemove={() => removeCustomImage(img.id)} />
                   <PrintImage img={img} />
+                </div>
+            ))}
+            {quotation.customTextBlocks?.filter(b => b.page === 2).map(block => (
+                <div key={block.id}>
+                  <QuotationTextBlock block={block} onUpdate={(u) => updateCustomTextBlock(block.id, u)} onRemove={() => removeCustomTextBlock(block.id)} />
+                  <PrintTextBlock block={block} />
                 </div>
             ))}
             <div className="flex flex-col items-center">
@@ -1197,13 +1426,19 @@ export default function App() {
           </section>
 
           {/* PAGE 4: INVESTMENT & PAYMENT */}
-          <section className="quotation-page flex flex-col py-32 min-h-[297mm] relative overflow-hidden">
+          <section className="quotation-page flex flex-col py-32 min-h-[297mm] relative overflow-hidden bg-white">
              {quotation.customImages?.filter(img => img.page === 3).map(img => (
-                <QuotationImage key={img.id} img={img} onUpdate={(u) => updateCustomImage(img.id, u)} onRemove={() => removeCustomImage(img.id)} />
+                <div key={img.id}>
+                  <QuotationImage img={img} onUpdate={(u) => updateCustomImage(img.id, u)} onRemove={() => removeCustomImage(img.id)} />
+                  <PrintImage img={img} />
+                </div>
              ))}
-             {quotation.customImages?.filter(img => img.page === 3).map(img => (
-                <PrintImage key={img.id} img={img} />
-             ))}
+             {quotation.customTextBlocks?.filter(b => b.page === 3).map(block => (
+                <div key={block.id}>
+                  <QuotationTextBlock block={block} onUpdate={(u) => updateCustomTextBlock(block.id, u)} onRemove={() => removeCustomTextBlock(block.id)} />
+                  <PrintTextBlock block={block} />
+                </div>
+            ))}
              
              <div className="absolute inset-0 z-0 bg-cover bg-bottom opacity-[0.04] pointer-events-none" style={{ backgroundImage: "url('https://images.unsplash.com/photo-1582555172866-f73bb12a2ab3?auto=format&fit=crop&q=80&w=1200')" }} />
              
@@ -1289,13 +1524,19 @@ export default function App() {
           </section>
 
           {/* PAGE 5: TERMS & CONDITIONS */}
-          <section className="quotation-page py-32 bg-brand-bg relative">
+          <section className="quotation-page py-32 bg-white relative">
              {quotation.customImages?.filter(img => img.page === 4).map(img => (
                 <div key={img.id}>
                   <QuotationImage img={img} onUpdate={(u) => updateCustomImage(img.id, u)} onRemove={() => removeCustomImage(img.id)} />
                   <PrintImage img={img} />
                 </div>
              ))}
+             {quotation.customTextBlocks?.filter(b => b.page === 4).map(block => (
+                <div key={block.id}>
+                  <QuotationTextBlock block={block} onUpdate={(u) => updateCustomTextBlock(block.id, u)} onRemove={() => removeCustomTextBlock(block.id)} />
+                  <PrintTextBlock block={block} />
+                </div>
+            ))}
 
              <div className="px-16 space-y-24">
                 <div className="flex items-baseline gap-6 border-b border-brand-olive/5 pb-10">
@@ -1332,6 +1573,12 @@ export default function App() {
                   <PrintImage img={img} />
                 </div>
              ))}
+             {quotation.customTextBlocks?.filter(b => b.page === 5).map(block => (
+                <div key={block.id}>
+                  <QuotationTextBlock block={block} onUpdate={(u) => updateCustomTextBlock(block.id, u)} onRemove={() => removeCustomTextBlock(block.id)} />
+                  <PrintTextBlock block={block} />
+                </div>
+            ))}
 
              <div className="absolute top-0 left-0 w-full h-full opacity-[0.03] pointer-events-none flex items-center justify-center">
                 <span className="font-serif text-[35vw] font-black uppercase tracking-tighter -rotate-12">FILMIFY</span>
