@@ -70,7 +70,7 @@ export const DEFAULT_QUOTATION: Omit<QuotationState, "userId" | "createdAt"> = {
     accountType: "CURRENT ACCOUNT",
     upiId: "+91 7400341574"
   },
-  coverImage: "https://images.unsplash.com/photo-1542045890-484196d42f53?auto=format&fit=crop&q=80&w=1200",
+  coverImage: "",
   customImages: [],
   customTextBlocks: []
 };

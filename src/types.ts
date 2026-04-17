@@ -13,10 +13,12 @@ export interface TrainingRule {
 export interface CustomImage {
   id: string;
   url: string;
-  x: number; // percentage
-  y: number; // percentage
-  width: number; // percentage or px
-  page: number; // which page index
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  page: number;
+  rotation?: number;
 }
 
 export interface CustomTextBlock {
@@ -24,11 +26,15 @@ export interface CustomTextBlock {
   text: string;
   x: number;
   y: number;
+  width?: number;
+  height?: number;
   fontSize: number;
   fontWeight: string;
   color: string;
   fontFamily: string;
+  textAlign?: 'left' | 'center' | 'right';
   page: number;
+  rotation?: number;
 }
 
 export interface DesignSettings {
