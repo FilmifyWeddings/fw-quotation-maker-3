@@ -370,19 +370,11 @@ export default function App() {
       recognitionRef.current.lang = 'hi-IN';
 
       recognitionRef.current.onresult = (event: any) => {
-        let interimTranscript = '';
-        let finalTranscript = '';
-
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
-          } else {
-            interimTranscript += event.results[i][0].transcript;
-          }
+        let fullTranscript = '';
+        for (let i = 0; i < event.results.length; i++) {
+          fullTranscript += event.results[i][0].transcript;
         }
-        
-        const currentText = finalTranscript || interimTranscript;
-        setPrompt(currentText);
+        setPrompt(fullTranscript);
       };
 
       recognitionRef.current.onend = () => {
@@ -432,17 +424,17 @@ export default function App() {
 
     try {
       const promptContext = `
-        You are an expert Wedding Sales Assistant for "Filmify Studio".
-        Analyze the user's request and return a JSON object that updates the quotation state.
+        You are an AI Wedding Sales Assistant for "Filmify Studio".
+        Analyze the user's voice command and extract information into a JSON object.
         
-        Current Quotation: ${JSON.stringify(quotation)}
+        User Information extraction rules:
+        - If someone's name is mentioned (e.g., "Rahul ki wedding", "Shubhamkar"), set 'clientName'.
+        - If a price/amount is mentioned (e.g., "dedh lakh", "1.5L", "2 lakhs"), convert it to a raw number for 'finalAmount'.
+        - If event dates or names are mentioned, update 'functions'.
+        - If specific deliverables are asked for, update 'preWeddingDeliverables' or 'finalDeliverables'.
+        - Current state of quotation: ${JSON.stringify(quotation)}
         
-        INSTRUCTIONS:
-        1. If user mentions a name, update 'clientName'.
-        2. If amount mentioned, update 'finalAmount'.
-        3. If dates/events mentioned, update the 'functions' array.
-        4. If keywords match Smart Rules, inject deliverables.
-        5. Return ONLY a valid JSON object of the modified properties.
+        Return ONLY the updated properties as a clean JSON object.
       `;
 
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
@@ -472,16 +464,15 @@ export default function App() {
             }
           }
         },
-        contents: [{ role: 'user', parts: [{ text: `${promptContext}\n\nUser Request: ${input}` }] }]
+        contents: [{ role: 'user', parts: [{ text: `${promptContext}\n\nVoice Command: ${input}` }] }]
       });
 
-      const updatedData = JSON.parse(response.text || '{}');
-      console.log("AI Updated Data:", updatedData);
+      const responseText = response.text || '{}';
+      const updatedData = JSON.parse(responseText);
+      console.log("AI Extraction Result:", updatedData);
 
       if (updatedData && Object.keys(updatedData).length > 0) {
         setQuotation(prev => ({ ...prev, ...updatedData, userId: user?.uid }));
-      } else {
-        console.warn("AI returned empty data");
       }
       setPrompt('');
     } catch (error) {
