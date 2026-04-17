@@ -161,16 +161,37 @@ const QuotationImage = ({ img, onUpdate, onRemove, isSelected, onSelect }: { img
         />
         <img 
           src={img.url} 
-          className="w-full h-full object-cover shadow-xl rounded-sm pointer-events-none" 
+          style={{ borderRadius: img.borderRadius || '2px' }}
+          className="w-full h-full object-cover shadow-xl pointer-events-none" 
           referrerPolicy="no-referrer" 
         />
         
         {isSelected && (
-          <div className="absolute -top-10 left-1/2 -track-x-1/2 flex gap-2 bg-white px-3 py-1.5 rounded-full shadow-xl no-print">
-            <button onClick={() => fileInputRef.current?.click()} className="p-1.5 hover:bg-gray-100 rounded-full text-brand-olive">
+          <div className="absolute -top-12 left-1/2 -translate-x-1/2 flex gap-2 bg-white px-3 py-1.5 rounded-full shadow-2xl no-print border border-gray-100 items-center">
+            <button onClick={() => fileInputRef.current?.click()} className="p-2 hover:bg-gray-100 rounded-lg text-brand-olive transition-all" title="Upload Image">
               <Upload size={14} />
             </button>
-            <button onClick={onRemove} className="p-1.5 hover:bg-red-50 text-red-500 rounded-full">
+            <div className="w-px h-6 bg-gray-100 mx-1" />
+            <div className="flex gap-1" title="Shape">
+               {[
+                 { id: 'none', radius: '2px', icon: Maximize2 },
+                 { id: 'arch', radius: '12rem 12rem 0 0', icon: Palette },
+                 { id: 'circle', radius: '9999px', icon: QrCode }
+               ].map(shape => (
+                 <button 
+                   key={shape.id}
+                   onClick={() => onUpdate({ borderRadius: shape.radius })}
+                   className={cn(
+                     "p-2 rounded-lg transition-all",
+                     img.borderRadius === shape.radius ? "bg-brand-olive text-white" : "hover:bg-gray-50 text-gray-400"
+                   )}
+                 >
+                   <shape.icon size={12} />
+                 </button>
+               ))}
+            </div>
+            <div className="w-px h-6 bg-gray-100 mx-1" />
+            <button onClick={onRemove} className="p-2 hover:bg-red-50 text-red-500 rounded-lg transition-all">
               <Trash2 size={14} />
             </button>
           </div>
@@ -260,7 +281,12 @@ const PrintImage = ({ img }: { img: any, key?: any }) => (
       width: `${img.width}px`
     }}
   >
-    <img src={img.url} className="w-full h-auto" referrerPolicy="no-referrer" />
+    <img 
+      src={img.url} 
+      style={{ borderRadius: img.borderRadius || '2px' }}
+      className="w-full h-auto" 
+      referrerPolicy="no-referrer" 
+    />
   </div>
 );
 
@@ -269,6 +295,7 @@ const PUBLIC_UID = 'filmify_admin_default';
 export default function App() {
   const [user, setUser] = useState<any>({ uid: PUBLIC_UID, email: 'admin@filmify.com' });
   const [isAuthReady, setIsAuthReady] = useState(true);
+  const [view, setView] = useState<'dashboard' | 'editor'>('dashboard');
   const [quotation, setQuotation] = useState<QuotationState>({
     ...DEFAULT_QUOTATION,
     userId: PUBLIC_UID,
@@ -710,17 +737,99 @@ export default function App() {
     </section>
   );
 
+  const startNew = () => {
+    setQuotation({
+      ...BLANK_QUOTATION,
+      userId: user?.uid || '',
+      createdAt: new Date().toISOString()
+    } as any);
+    setView('editor');
+  };
+
+  const openQuotation = (q: QuotationState) => {
+    setQuotation(q);
+    setView('editor');
+  };
+
+  if (view === 'dashboard') {
+    return (
+      <div className="min-h-screen bg-gray-100 p-8 font-sans">
+        <div className="max-w-6xl mx-auto">
+          <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 gap-6">
+            <div className="space-y-2">
+              <h1 className="font-serif text-5xl font-bold text-brand-olive tracking-tight">Filmify Studio</h1>
+              <p className="text-gray-500 text-[10px] font-black tracking-[0.3em] uppercase">Premium Photography Cloud</p>
+            </div>
+            <button 
+              onClick={startNew}
+              className="bg-brand-olive text-white px-8 py-4 rounded-2xl shadow-xl hover:scale-105 active:scale-95 transition-all font-bold flex items-center gap-3 uppercase tracking-widest text-[10px]"
+            >
+              <Plus size={18} /> नई कोटेशन बनाएँ
+            </button>
+          </header>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <motion.div 
+               whileHover={{ y: -5 }}
+               onClick={startNew}
+               className="bg-white/50 border-2 border-dashed border-gray-300 rounded-[3rem] p-12 flex flex-col items-center justify-center gap-4 cursor-pointer hover:border-brand-olive hover:bg-white transition-all min-h-[300px]"
+            >
+               <div className="w-16 h-16 bg-brand-olive/5 rounded-full flex items-center justify-center text-brand-olive">
+                 <Plus size={32} />
+               </div>
+               <p className="font-bold text-brand-olive uppercase tracking-widest text-[10px]">Create Blank</p>
+            </motion.div>
+
+            {history.map((q, i) => (
+              <motion.div 
+                key={q.id || i}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.05 }}
+                whileHover={{ y: -5 }}
+                onClick={() => openQuotation(q)}
+                className="bg-white rounded-[3rem] shadow-sm hover:shadow-2xl transition-all p-8 cursor-pointer border border-transparent hover:border-brand-olive/20 flex flex-col justify-between min-h-[320px] group"
+              >
+                <div className="space-y-4">
+                  <div className="flex justify-between items-start">
+                    <div className="w-12 h-12 bg-brand-bg rounded-2xl flex items-center justify-center text-brand-olive">
+                      <FileText size={24} />
+                    </div>
+                    <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest group-hover:text-brand-olive/40 transition-colors">
+                      {q.createdAt ? format(new Date(q.createdAt), 'MMM dd, yyyy') : 'No Date'}
+                    </span>
+                  </div>
+                  <h3 className="font-serif text-3xl text-brand-olive font-bold tracking-tight line-clamp-2">{q.clientName || 'Unnamed Client'}</h3>
+                </div>
+                
+                <div className="pt-6 border-t border-gray-50 flex justify-between items-end">
+                   <div className="space-y-1">
+                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Investment</p>
+                      <p className="font-serif text-2xl text-brand-olive font-bold tracking-tighter">₹{new Intl.NumberFormat('en-IN').format(q.finalAmount)}</p>
+                   </div>
+                   <div className="w-10 h-10 bg-brand-olive text-white rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                      <ChevronRight size={20} />
+                   </div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!isAuthReady) {
     return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center bg-[#f4f3ef] text-brand-green">
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-[#f4f3ef] text-brand-olive">
         <Loader2 className="animate-spin mb-4" size={48} />
-        <p className="font-serif animate-pulse">Initializing Filmify...</p>
+        <p className="font-serif animate-pulse">Initializing Filmify Studio...</p>
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen bg-[#f4f3ef] overflow-hidden">
+    <div className="flex h-screen bg-[#e5e5e5] overflow-hidden">
       <style>
         {`
           :root {
@@ -782,16 +891,22 @@ export default function App() {
         "fixed inset-y-0 left-0 z-[90] lg:relative lg:translate-x-0 transition-transform duration-300 w-96 bg-white border-r border-gray-200 flex flex-col no-print",
         isMobileMenuOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full"
       )}>
-        <div className="p-8 border-b border-gray-100 bg-brand-bg">
+        <div className="p-8 border-b border-gray-100 bg-brand-bg flex items-center justify-between">
           <div className="flex items-center gap-3">
              <div className="w-10 h-10 bg-brand-olive flex items-center justify-center rounded-xl shadow-lg shadow-brand-olive/20">
                 <span className="text-white font-serif text-xl font-bold">F</span>
              </div>
              <div>
-                <h1 className="font-serif text-2xl font-bold text-brand-olive tracking-tight leading-none">Filmify Admin</h1>
-                <p className="text-[10px] text-gray-500 mt-1 uppercase tracking-widest font-bold">AI Quotation Dashboard</p>
+                <h1 className="font-serif text-2xl font-bold text-brand-olive tracking-tight leading-none">Editor</h1>
+                <p className="text-[9px] text-gray-500 mt-1 uppercase tracking-widest font-bold">Filmify Studio</p>
              </div>
           </div>
+          <button 
+             onClick={() => setView('dashboard')}
+             className="p-3 bg-white text-gray-400 hover:text-brand-olive rounded-xl shadow-sm border border-gray-100 transition-all active:scale-95"
+          >
+             <X size={20} />
+          </button>
         </div>
 
         {/* Tab Switcher */}
@@ -1457,58 +1572,100 @@ export default function App() {
                     </div>
  </div>
 
-                <div className="space-y-10">
-                    <div className="bg-brand-olive py-5 px-10 flex justify-between items-center shadow-xl">
-                        <h2 className="font-serif text-xl tracking-[0.4em] text-white font-bold uppercase">Payment Schedule</h2>
+                <div className="space-y-12">
+                    <div className="bg-[#e8e4d9] py-6 px-12 flex justify-between items-center relative overflow-hidden">
+                        <h2 className="font-serif text-2xl tracking-[0.2em] text-brand-olive uppercase font-bold">Payment Details</h2>
+                        <div className="absolute right-0 top-0 bottom-0 w-32 bg-brand-olive opacity-5 -skew-x-12 translate-x-10" />
                     </div>
 
-                    <div className="px-4">
-                        <table className="w-full text-center border-collapse">
-                            <thead className="border-b border-brand-olive/20">
-                                <tr className="uppercase tracking-[0.3em] font-black text-[9px] text-brand-olive">
-                                    <th className="py-6 px-4">Milestone</th>
-                                    <th className="py-6 px-4">Percentage</th>
-                                    <th className="py-6 px-4">Amount</th>
-                                    <th className="py-6 px-4">Condition</th>
+                    <div className="px-6">
+                        <table className="w-full text-center border-collapse overflow-hidden">
+                            <thead>
+                                <tr className="bg-brand-olive text-white font-bold uppercase tracking-[0.2em] text-[10px]">
+                                    <th className="py-5 px-4 border-r border-brand-olive/10">Date</th>
+                                    <th className="py-5 px-4 border-r border-brand-olive/10">Steps</th>
+                                    <th className="py-5 px-4 border-r border-brand-olive/10">Amount</th>
+                                    <th className="py-5 px-4">Status</th>
                                 </tr>
                             </thead>
                             <tbody className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
-                                <tr className="border-b border-gray-100">
-                                    <td className="py-8 px-4 text-brand-olive">Booking Advance</td>
-                                    <td className="py-8 px-4">30%</td>
-                                    <td className="py-8 px-4">₹{new Intl.NumberFormat('en-IN').format(quotation.finalAmount * 0.3)}</td>
-                                    <td className="py-8 px-4 text-[8px] text-gray-400">To secure the dates</td>
-                                </tr>
-                                <tr className="border-b border-gray-100">
-                                    <td className="py-8 px-4 text-brand-olive">Event Milestone</td>
-                                    <td className="py-8 px-4">40%</td>
-                                    <td className="py-8 px-4">₹{new Intl.NumberFormat('en-IN').format(quotation.finalAmount * 0.4)}</td>
-                                    <td className="py-8 px-4 text-[8px] text-gray-400">On Main Wedding Day</td>
-                                </tr>
-                                <tr>
-                                    <td className="py-8 px-4 text-brand-olive">Final Delivery</td>
-                                    <td className="py-8 px-4">30%</td>
-                                    <td className="py-8 px-4">₹{new Intl.NumberFormat('en-IN').format(quotation.finalAmount * 0.3)}</td>
-                                    <td className="py-8 px-4 text-[8px] text-gray-400">Before raw data handover</td>
-                                </tr>
+                                {quotation.paymentSchedule?.map((p, i) => (
+                                    <tr key={i} className="border-b border-[#eeeadd] group hover:bg-brand-bg/50 transition-colors">
+                                        <td className="py-6 px-4 bg-[#f9f8f4]">
+                                          <EditableText value={p.date} onChange={(v) => {
+                                            const next = [...(quotation.paymentSchedule || [])];
+                                            next[i].date = v;
+                                            setQuotation({ ...quotation, paymentSchedule: next });
+                                          }} />
+                                        </td>
+                                        <td className="py-6 px-4 bg-white">
+                                          <EditableText value={p.step} onChange={(v) => {
+                                            const next = [...(quotation.paymentSchedule || [])];
+                                            next[i].step = v;
+                                            setQuotation({ ...quotation, paymentSchedule: next });
+                                          }} />
+                                        </td>
+                                        <td className="py-6 px-4 font-bold text-brand-olive bg-[#f9f8f4]">
+                                          ₹<EditableText value={new Intl.NumberFormat('en-IN').format(p.amt)} onChange={(v) => {
+                                            const next = [...(quotation.paymentSchedule || [])];
+                                            next[i].amt = parseInt(v.replace(/\D/g, '')) || 0;
+                                            setQuotation({ ...quotation, paymentSchedule: next });
+                                          }} />
+                                        </td>
+                                        <td className="py-6 px-4 bg-white">
+                                          <button 
+                                            onClick={() => {
+                                              const next = [...(quotation.paymentSchedule || [])];
+                                              next[i].status = next[i].status === 'Completed' ? 'Pending' : 'Completed';
+                                              setQuotation({ ...quotation, paymentSchedule: next });
+                                            }}
+                                            className={cn(
+                                              "px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border transition-all no-print",
+                                              p.status === 'Completed' 
+                                                ? "bg-green-50 text-green-600 border-green-100" 
+                                                : "bg-red-50 text-red-600 border-red-100"
+                                            )}
+                                          >
+                                            {p.status}
+                                          </button>
+                                          <span className="only-print">
+                                            {p.status}
+                                          </span>
+                                        </td>
+                                    </tr>
+                                ))}
                             </tbody>
                         </table>
                     </div>
-                </div>
 
-                {/* Bank Details Box */}
-                <div className="p-12 border-2 border-brand-olive/10 bg-brand-bg rounded-sm flex flex-col md:flex-row gap-12 items-center">
-                    <div className="flex-1 space-y-6">
-                        <h4 className="font-serif text-2xl text-brand-olive">Banking & QR</h4>
-                        <div className="grid grid-cols-1 gap-4 text-[10px] tracking-widest font-bold uppercase">
-                            <p className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">A/C Name:</span> {quotation.bankDetails.accountName}</p>
-                            <p className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">A/C Number:</span> {quotation.bankDetails.accountNumber}</p>
-                            <p className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">IFSC Code:</span> {quotation.bankDetails.ifscCode}</p>
+                    <div className="flex flex-col items-center bg-brand-bg/30 backdrop-blur-sm p-12 border border-brand-olive/5 max-w-md mx-auto relative group rounded-sm">
+                        <div className="absolute -top-4 -left-4 w-8 h-8 border-t-2 border-l-2 border-brand-olive/20" />
+                        <div className="absolute -bottom-4 -right-4 w-8 h-8 border-b-2 border-r-2 border-brand-olive/20" />
+                        
+                        <p className="text-[10px] font-black text-brand-olive mb-6 tracking-[0.3em] uppercase flex items-center gap-4">
+                           <span className="w-10 h-px bg-brand-olive/20" /> 
+                           Digital Payment 
+                           <span className="w-10 h-px bg-brand-olive/20" />
+                        </p>
+                        
+                        <div className="relative mb-6">
+                           <div className="absolute inset-0 bg-brand-olive/5 rounded-3xl blur-xl scale-110 group-hover:scale-125 transition-transform" />
+                           <img 
+                             src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=upi://pay?pa=${quotation.bankDetails?.upiId}&pn=Filmify%20Studio`} 
+                             className="w-40 h-40 relative z-10 p-2 bg-white rounded-3xl shadow-2xl border border-gray-100" 
+                             referrerPolicy="no-referrer" 
+                           />
                         </div>
-                    </div>
-                    <div className="w-40 h-40 bg-white p-4 shadow-xl flex flex-col items-center justify-center border border-gray-100">
-                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=upi://pay?pa=7400341574@upi&pn=Filmify%20Weddings" className="w-full mb-2" referrerPolicy="no-referrer" />
-                        <span className="text-[7px] font-black tracking-widest text-brand-olive">SCAN TO PAY</span>
+                        
+                        <div className="text-center space-y-4">
+                           <p className="text-[11px] font-bold text-brand-olive tracking-widest uppercase">Scan to Pay via UPI</p>
+                           <div className="text-[8px] text-gray-400 font-bold tracking-[0.2em] leading-relaxed uppercase">
+                              Account Name: {quotation.bankDetails?.accountName}<br/>
+                              Bank: KOTAK MAHINDRA BANK<br/>
+                              A/C: {quotation.bankDetails?.accountNumber}<br/>
+                              IFSC: {quotation.bankDetails?.ifscCode}
+                           </div>
+                        </div>
                     </div>
                 </div>
              </div>

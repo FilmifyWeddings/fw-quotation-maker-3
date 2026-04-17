@@ -70,8 +70,22 @@ export const DEFAULT_QUOTATION: Omit<QuotationState, "userId" | "createdAt"> = {
     accountType: "CURRENT ACCOUNT",
     upiId: "+91 7400341574"
   },
+  paymentSchedule: [
+    { date: "15 Apr 2026", step: "Advance Amount", amt: 87500, status: "Completed" },
+    { date: "27 Jan 2027", step: "On Wedding Event Day", amt: 87500, status: "Pending" }
+  ],
   coverImage: "",
-  customImages: [],
+  customImages: [
+    {
+      id: "hero-1",
+      url: "https://images.unsplash.com/photo-1583939000240-690e87b7a1e0?auto=format&fit=crop&q=80&w=1200",
+      x: 100,
+      y: 400,
+      width: 600,
+      height: 600,
+      page: 0
+    }
+  ],
   customTextBlocks: []
 };
 
@@ -118,6 +132,10 @@ export const BLANK_QUOTATION: Omit<QuotationState, "userId" | "createdAt"> = {
   coverImage: "",
   customImages: [],
   customTextBlocks: [],
+  paymentSchedule: [
+    { date: "", step: "Advance Amount", amt: 0, status: "Pending" },
+    { date: "", step: "On Wedding Event", amt: 0, status: "Pending" }
+  ],
   bankDetails: {
     accountName: "FILMIFY WEDDINGS",
     accountNumber: "",

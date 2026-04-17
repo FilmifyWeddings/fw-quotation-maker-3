@@ -19,6 +19,7 @@ export interface CustomImage {
   height: number;
   page: number;
   rotation?: number;
+  borderRadius?: string;
 }
 
 export interface CustomTextBlock {
@@ -65,4 +66,10 @@ export interface QuotationState {
     accountType: string;
     upiId: string;
   };
+  paymentSchedule?: {
+    date: string;
+    step: string;
+    amt: number;
+    status: string;
+  }[];
 }
