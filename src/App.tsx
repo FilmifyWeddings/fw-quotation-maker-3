@@ -367,7 +367,7 @@ export default function App() {
       recognitionRef.current = new SpeechRecognition();
       recognitionRef.current.continuous = false;
       recognitionRef.current.interimResults = false;
-      recognitionRef.current.lang = 'en-IN';
+      recognitionRef.current.lang = 'hi-IN';
 
       recognitionRef.current.onresult = (event: any) => {
         const transcript = event.results[0][0].transcript;
@@ -419,46 +419,51 @@ export default function App() {
     setIsAiLoading(true);
 
     try {
-      let updatedData: any;
-      
       const promptContext = `
-        Current Date: ${new Date().toLocaleDateString()}
-        Quotation State: ${JSON.stringify(quotation)}
+        You are an expert Wedding Sales Assistant for "Filmify Studio".
+        Analyze the user's request and return a JSON object that updates the quotation state.
         
-        SMART RULES:
-        ${rules.map(r => `- Keyword "${r.trigger}" -> Add Deliverables: ${r.deliverables.join(', ')}`).join('\n')}
+        Current Quotation: ${JSON.stringify(quotation)}
         
         INSTRUCTIONS:
         1. If user mentions a name, update 'clientName'.
         2. If amount mentioned, update 'finalAmount'.
         3. If dates/events mentioned, update the 'functions' array.
         4. If keywords match Smart Rules, inject deliverables.
-        5. Return ONLY a valid JSON object of the updated state.
+        5. Return ONLY a valid JSON object of the modified properties.
       `;
 
-      if (openaiKey) {
-        const openai = new OpenAI({ apiKey: openaiKey, dangerouslyAllowBrowser: true });
-        const response = await openai.chat.completions.create({
-          model: "gpt-4o",
-          messages: [
-            { role: 'system', content: "You are a wedding quotation expert. Return JSON ONLY." },
-            { role: 'user', content: promptContext },
-            { role: 'user', content: input }
-          ],
-          response_format: { type: "json_object" }
-        });
-        updatedData = JSON.parse(response.choices[0].message.content || '{}');
-      } else {
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-        const response = await ai.models.generateContent({
-           model: "gemini-2.0-flash",
-           config: { responseMimeType: "application/json" },
-           contents: [
-             { role: 'user', parts: [{ text: `${promptContext}\n\nUser Request: ${input}` }] }
-           ]
-        });
-        updatedData = JSON.parse(response.text || '{}');
-      }
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        config: { 
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              clientName: { type: Type.STRING },
+              finalAmount: { type: Type.NUMBER },
+              preWeddingDeliverables: { type: Type.ARRAY, items: { type: Type.STRING } },
+              finalDeliverables: { type: Type.ARRAY, items: { type: Type.STRING } },
+              functions: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    date: { type: Type.STRING },
+                    name: { type: Type.STRING },
+                    time: { type: Type.STRING },
+                    services: { type: Type.ARRAY, items: { type: Type.STRING } }
+                  }
+                }
+              }
+            }
+          }
+        },
+        contents: [{ role: 'user', parts: [{ text: `${promptContext}\n\nUser Request: ${input}` }] }]
+      });
+
+      const updatedData = JSON.parse(response.text || '{}');
 
       if (updatedData) {
         setQuotation(prev => ({ ...prev, ...updatedData, userId: user?.uid }));
@@ -667,72 +672,80 @@ export default function App() {
 
   // Main Preview Sections
   const renderPage1 = () => (
-    <section className="quotation-page flex flex-col items-center justify-start min-h-[297mm] relative pt-24 pb-0 bg-white" onClick={() => setSelectedElement(null)}>
+    <section className="quotation-page flex flex-col items-center justify-start relative bg-white overflow-hidden h-[297mm]" onClick={() => setSelectedElement(null)}>
       <div className="absolute inset-0 z-0 pointer-events-none opacity-[0.03]" style={{ backgroundImage: "url('https://www.transparenttextures.com/patterns/cream-paper.png')" }} />
       
-            {quotation.customImages?.filter(img => img.page === 0).map(img => (
-                <div key={img.id} className="z-50">
-                  <QuotationImage 
-                    img={img} 
-                    isSelected={selectedElement?.id === img.id}
-                    onSelect={() => setSelectedElement({ type: 'image', id: img.id })}
-                    onUpdate={(u) => updateCustomImage(img.id, u)} 
-                    onRemove={() => removeCustomImage(img.id)} 
-                  />
-                  <PrintImage img={img} />
-                </div>
-            ))}
+      {/* Background/Custom Assets Overlay */}
+      {quotation.customImages?.filter(img => img.page === 0).map(img => (
+          <div key={img.id} className="z-50">
+            <QuotationImage 
+              img={img} 
+              isSelected={selectedElement?.id === img.id}
+              onSelect={() => setSelectedElement({ type: 'image', id: img.id })}
+              onUpdate={(u) => updateCustomImage(img.id, u)} 
+              onRemove={() => removeCustomImage(img.id)} 
+            />
+            <PrintImage img={img} />
+          </div>
+      ))}
 
-            {quotation.customTextBlocks?.filter(b => b.page === 0).map(block => (
-                <div key={block.id} className="z-50">
-                  <QuotationTextBlock 
-                    block={block} 
-                    isSelected={selectedElement?.id === block.id}
-                    onSelect={() => setSelectedElement({ type: 'text', id: block.id })}
-                    onUpdate={(u) => updateCustomTextBlock(block.id, u)} 
-                    onRemove={() => removeCustomTextBlock(block.id)} 
-                  />
-                  <PrintTextBlock block={block} />
-                </div>
-            ))}
+      {quotation.customTextBlocks?.filter(b => b.page === 0).map(block => (
+          <div key={block.id} className="z-50">
+            <QuotationTextBlock 
+              block={block} 
+              isSelected={selectedElement?.id === block.id}
+              onSelect={() => setSelectedElement({ type: 'text', id: block.id })}
+              onUpdate={(u) => updateCustomTextBlock(block.id, u)} 
+              onRemove={() => removeCustomTextBlock(block.id)} 
+            />
+            <PrintTextBlock block={block} />
+          </div>
+      ))}
       
-      <div className="relative z-10 w-full text-center space-y-12 mt-20 px-12">
-          <EditableText
-            as="h1"
-            value={quotation.clientName}
-            onChange={(val) => setQuotation({ ...quotation, clientName: val.toUpperCase() })}
-            className="font-serif text-[100px] md:text-[140px] tracking-tight text-brand-olive uppercase leading-none font-black italic select-none"
-            style={{ fontFamily: quotation.designSettings?.primaryFont }}
-          />
+      {/* Page 1 Header based on User Reference */}
+      <div className="relative z-10 w-full text-center px-12 pt-32 space-y-24">
+          <div className="space-y-6">
+            <EditableText
+              as="h1"
+              value={quotation.clientName}
+              onChange={(val) => setQuotation({ ...quotation, clientName: val.toUpperCase() })}
+              className="font-serif text-[110px] tracking-tight text-brand-olive uppercase leading-none font-black select-none"
+              style={{ fontFamily: quotation.designSettings?.primaryFont }}
+            />
+          </div>
           
-          <div className="space-y-6 pt-8">
-            <h2 className="font-serif text-2xl md:text-3xl tracking-[0.6em] text-brand-olive uppercase font-medium">ENGAGEMENT QUOTATION</h2>
-            <div className="w-24 h-[1px] bg-brand-olive/30 mx-auto my-6" />
-            <p className="text-xs md:text-md tracking-[0.3em] text-brand-olive/80 uppercase font-black max-w-lg mx-auto leading-relaxed">BOTH SIDES - MAHARAJA BANQUET, BADLAPUR</p>
+          <div className="space-y-6 pt-10">
+            <h2 className="font-sans text-2xl tracking-[0.8em] text-brand-dark uppercase font-medium">ENGAGEMENT QUOTATION</h2>
+            <div className="space-y-4 pt-4">
+               <p className="text-[11px] tracking-[0.4em] text-gray-500 uppercase font-black max-w-lg mx-auto leading-relaxed">BOTH SIDES - MAHARAJA BANQUET, BADLAPUR</p>
+            </div>
           </div>
       </div>
 
       {/* Center Branding Area */}
-      <div className="relative z-10 flex-1 flex flex-col items-center justify-center w-full">
-          <div className="opacity-90 scale-90 md:scale-110">
-            <img src={quotation.designSettings?.logoUrl || DEFAULT_DESIGN.logoUrl} className="w-56 h-auto" alt="Logo" referrerPolicy="no-referrer" />
-          </div>
+      <div className="relative z-10 py-32 flex flex-col items-center justify-center flex-1">
+          <img 
+            src={quotation.designSettings?.logoUrl || DEFAULT_DESIGN.logoUrl} 
+            className="w-56 h-auto opacity-70" 
+            alt="Logo" 
+            referrerPolicy="no-referrer" 
+          />
       </div>
 
-      {/* Large Hero Couple Photo at bottom */}
-      <div className="relative z-0 w-full max-w-5xl mx-auto px-0 pb-0 mt-auto overflow-hidden">
-         <div className="aspect-[4/5] w-full overflow-hidden relative">
+      {/* Couple Photo at bottom - Full Width Flush */}
+      <div className="relative z-0 w-full mt-auto mb-0 overflow-hidden h-[40%]">
+          <div className="w-full h-full relative">
             <EditableText
-              value={quotation.coverImage || "https://images.unsplash.com/photo-1542045890-484196d42f53?auto=format&fit=crop&q=80&w=1200"}
+              value={quotation.coverImage || "https://i.ibb.co/RpQpR4qT/image.png"}
               onChange={(val) => setQuotation({ ...quotation, coverImage: val })}
               className="absolute top-4 right-4 z-20 text-[10px] bg-brand-olive text-white p-3 rounded-full no-print opacity-0 hover:opacity-100 transition-opacity font-bold uppercase tracking-widest shadow-xl"
             />
             <img 
-              src={quotation.coverImage || "https://images.unsplash.com/photo-1542045890-484196d42f53?auto=format&fit=crop&q=80&w=1200"} 
-              className="w-full h-full object-cover contrast-[1.1]" 
+              src={quotation.coverImage || "https://i.ibb.co/RpQpR4qT/image.png"} 
+              className="w-full h-full object-cover object-center scale-105" 
               referrerPolicy="no-referrer" 
             />
-         </div>
+          </div>
       </div>
     </section>
   );
