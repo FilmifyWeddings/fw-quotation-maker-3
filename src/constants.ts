@@ -1,8 +1,17 @@
-import { QuotationState } from "./types";
+import { DesignSettings, QuotationState } from "./types";
+
+export const DEFAULT_DESIGN: DesignSettings = {
+  primaryFont: "'Playfair Display', serif",
+  secondaryFont: "'Montserrat', sans-serif",
+  accentColor: "#5a5646",
+  logoUrl: "https://filmifyweddings.com/wp-content/uploads/2023/10/FILMIFY-WEDDINGS-LOGO-01.png",
+  fontScale: 1
+};
 
 export const DEFAULT_QUOTATION: Omit<QuotationState, "userId" | "createdAt"> = {
-  clientName: "CLIENT NAME",
+  clientName: "SHUBHAMKAR",
   finalAmount: 175000,
+  designSettings: DEFAULT_DESIGN,
   preWeddingDeliverables: [
     "Full Ultra HD Super-Fine Raw Photos",
     "Approx. 50 High Resolution Edited Images",
@@ -61,7 +70,8 @@ export const DEFAULT_QUOTATION: Omit<QuotationState, "userId" | "createdAt"> = {
     accountType: "CURRENT ACCOUNT",
     upiId: "+91 7400341574"
   },
-  coverImage: "https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&q=80&w=1200"
+  coverImage: "https://images.unsplash.com/photo-1542045890-484196d42f53?auto=format&fit=crop&q=80&w=1200",
+  customImages: []
 };
 
 export const TERMS_AND_CONDITIONS = [
@@ -100,6 +110,7 @@ export const TERMS_AND_CONDITIONS = [
 export const BLANK_QUOTATION: Omit<QuotationState, "userId" | "createdAt"> = {
   clientName: "SURNAME",
   finalAmount: 0,
+  designSettings: DEFAULT_DESIGN,
   preWeddingDeliverables: [],
   functions: [],
   finalDeliverables: [],

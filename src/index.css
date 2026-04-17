@@ -18,15 +18,20 @@
 }
 
 @layer components {
+  .page-container {
+    @apply flex flex-col items-center gap-12 py-12;
+  }
+
   .quotation-page {
-    @apply bg-brand-bg relative overflow-hidden;
+    @apply bg-brand-bg relative overflow-hidden shadow-2xl;
     width: 210mm;
-    max-width: 100%;
     min-height: 297mm;
-    padding: 4rem 3rem;
     background-image: url('https://www.transparenttextures.com/patterns/cream-paper.png');
-    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    background-color: var(--color-brand-bg);
     margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.1);
   }
 
   /* Specific PDF Image Shapes */
@@ -40,16 +45,29 @@
 
   [contenteditable="true"]:hover, [contenteditable="true"]:focus { 
     background-color: rgba(90, 86, 70, 0.1); 
-    border-bottom: 1px dashed #5a5646; 
-    border-radius: 2px; 
+    border-bottom: 2px solid var(--color-brand-olive); 
+    border-radius: 4px; 
     outline: none;
+  }
+
+  /* Custom scrollbar for sidebar */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-gray-200 rounded-full hover:bg-gray-300;
   }
 
   @media (max-width: 768px) {
     .quotation-page {
-      width: 100%;
+      width: 100vw;
       min-height: auto;
       padding: 2rem 1rem;
+      border-radius: 0;
+      box-shadow: none;
     }
   }
 }
@@ -63,15 +81,23 @@
     padding: 0 !important;
     margin: 0 !important;
   }
+  .page-container {
+    padding: 0 !important;
+    gap: 0 !important;
+  }
   .quotation-page {
     box-shadow: none !important;
     margin: 0 !important;
-    width: 100% !important;
-    height: auto !important;
+    width: 210mm !important;
+    height: 297mm !important;
     page-break-after: always;
+    page-break-inside: avoid;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
-  .page-container {
-    padding: 0 !important;
+  @page {
+    size: A4 portrait;
+    margin: 0;
   }
 }
 

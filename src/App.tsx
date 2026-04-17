@@ -48,28 +48,31 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, auth } from './firebase';
-import { QuotationState, QuotationFunction, TrainingRule } from './types';
-import { DEFAULT_QUOTATION, BLANK_QUOTATION, TERMS_AND_CONDITIONS, POLICY_SECTIONS } from './constants';
+import { QuotationState, QuotationFunction, TrainingRule, DesignSettings } from './types';
+import { DEFAULT_DESIGN, DEFAULT_QUOTATION, BLANK_QUOTATION, TERMS_AND_CONDITIONS, POLICY_SECTIONS } from './constants';
 import { cn } from './lib/utils';
 import { format } from 'date-fns';
-import { Image as ImageIcon, Move, Maximize2 } from 'lucide-react';
+import { Image as ImageIcon, Move, Maximize2, Palette } from 'lucide-react';
 
 // Editable Text Component for Manual Edits
 const EditableText = ({ 
   value, 
   onChange, 
   className,
-  as: Component = 'span'
+  as: Component = 'span',
+  style
 }: { 
   value: string; 
   onChange: (val: string) => void; 
   className?: string;
   as?: any;
+  style?: React.CSSProperties;
 }) => {
   return (
     <Component
       contentEditable
       suppressContentEditableWarning
+      style={style}
       className={cn(
         "outline-none transition-all rounded transition-all duration-200 border-b border-dashed border-transparent", 
         "hover:bg-[#5a5646]/10 hover:border-[#5a5646] focus:bg-[#5a5646]/10 focus:border-[#5a5646]",
@@ -117,8 +120,16 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 
 const QuotationImage = ({ img, onUpdate, onRemove }: { img: any, onUpdate: (u: any) => void, onRemove: () => void, key?: any }) => {
   return (
-    <div 
-      className="absolute group z-50 no-print"
+    <motion.div 
+      drag
+      dragMomentum={false}
+      onDragEnd={(_, info) => {
+        // Simplified position calculation based on A4 width/height
+        const newX = Math.max(0, Math.min(95, img.x + (info.offset.x / 8))); 
+        const newY = Math.max(0, Math.min(95, img.y + (info.offset.y / 11)));
+        onUpdate({ x: newX, y: newY });
+      }}
+      className="absolute group z-[100] no-print"
       style={{ 
         left: `${img.x}%`, 
         top: `${img.y}%`, 
@@ -126,27 +137,46 @@ const QuotationImage = ({ img, onUpdate, onRemove }: { img: any, onUpdate: (u: a
         cursor: 'move'
       }}
     >
-      <img src={img.url} className="w-full h-auto" referrerPolicy="no-referrer" />
-      <div className="absolute -top-10 left-0 hidden group-hover:flex items-center gap-2 bg-white/90 backdrop-blur p-1 rounded-lg shadow-xl border border-gray-100 scale-75 origin-top-left">
-          <button onClick={() => onUpdate({ x: Math.max(0, img.x - 1) })} className="p-1 hover:bg-gray-100 rounded text-gray-600"><Move size={12} /></button>
-          <input 
-            type="range" min="0" max="100" value={img.x} 
-            onChange={(e) => onUpdate({ x: parseInt(e.target.value) })}
-            className="w-16 h-1 accent-brand-green"
-          />
-          <input 
-            type="range" min="0" max="100" value={img.y} 
-            onChange={(e) => onUpdate({ y: parseInt(e.target.value) })}
-            className="w-16 h-1 accent-brand-green"
-          />
-          <input 
-            type="range" min="50" max="1000" value={img.width} 
-            onChange={(e) => onUpdate({ width: parseInt(e.target.value) })}
-            className="w-16 h-1 accent-brand-green"
-          />
-          <button onClick={onRemove} className="p-1 hover:bg-red-50 text-red-500 rounded"><Trash2 size={12} /></button>
+      <div className="relative group/canvas">
+        <img 
+          src={img.url} 
+          className="w-full h-auto shadow-2xl ring-0 group-hover:ring-4 ring-brand-olive/20 transition-all rounded-sm" 
+          referrerPolicy="no-referrer" 
+        />
+        
+        {/* Floating Toolbar */}
+        <div className="absolute -top-16 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-white p-3 rounded-full shadow-2xl border border-gray-100 opacity-0 group-hover:opacity-100 transition-all scale-90 group-hover:scale-100 whitespace-nowrap">
+          <button 
+             onClick={() => {
+               const url = window.prompt("Image URL:", img.url);
+               if (url) onUpdate({ url });
+             }}
+             className="p-2 hover:bg-gray-100 rounded-full text-brand-olive transition-colors flex items-center gap-2 px-3"
+          >
+             <ImageIcon size={16} />
+             <span className="text-[9px] font-bold uppercase tracking-tight">Replace Image</span>
+          </button>
+          <div className="w-[1px] h-4 bg-gray-200" />
+          <div className="flex items-center gap-2 px-2">
+            <span className="text-[8px] font-bold text-gray-400 uppercase">Scale</span>
+            <input 
+              type="range" min="50" max="1000" value={img.width} 
+              onChange={(e) => onUpdate({ width: parseInt(e.target.value) })}
+              className="w-24 accent-brand-olive h-1"
+            />
+          </div>
+          <div className="w-[1px] h-4 bg-gray-200" />
+          <button onClick={onRemove} className="p-2 hover:bg-red-50 text-red-500 rounded-full shadow-sm" title="Delete Asset">
+             <Trash2 size={16} />
+          </button>
+        </div>
+
+        {/* Positioning Tip */}
+        <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-black/80 text-white text-[7px] px-2 py-1 rounded font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">
+          Drag to Re-position
+        </div>
       </div>
-    </div>
+    </motion.div>
   );
 };
 
@@ -179,7 +209,7 @@ export default function App() {
   const [prompt, setPrompt] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const [activeTab, setActiveTab] = useState<'ai' | 'settings' | 'history'>('ai');
+  const [activeTab, setActiveTab] = useState<'ai' | 'settings' | 'history' | 'design'>('ai');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [newRuleTrigger, setNewRuleTrigger] = useState('');
@@ -355,17 +385,6 @@ export default function App() {
     setShowHistory(false);
   };
 
-  const createBlankQuotation = () => {
-    if (confirm("Start a new blank quotation? Current changes will be lost unless saved.")) {
-      setQuotation({
-        ...BLANK_QUOTATION,
-        userId: user?.uid || '',
-        createdAt: new Date().toISOString()
-      } as QuotationState);
-      setActiveTab('ai');
-    }
-  };
-
   const addItem = (type: 'preWedding' | 'final') => {
     if (type === 'preWedding') {
       setQuotation({
@@ -448,6 +467,40 @@ export default function App() {
     }
   };
 
+  // New Design State & Master Template logic
+  const saveAsMasterTemplate = async () => {
+    if (!user) return;
+    try {
+      setStatus('saving');
+      await setDoc(doc(db, 'settings', user.uid, 'master', 'template'), quotation.designSettings || DEFAULT_DESIGN);
+      setStatus('saved');
+      setTimeout(() => setStatus('idle'), 2000);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'settings/master/template');
+    }
+  };
+
+  const createBlankQuotation = async () => {
+    const confirm = window.confirm("Start a new blank quotation? Unsaved changes will be lost.");
+    if (!confirm) return;
+    
+    let initialDesign = DEFAULT_DESIGN;
+    if (user) {
+      try {
+         const snap = await getDocFromServer(doc(db, 'settings', user.uid, 'master', 'template'));
+         if (snap.exists()) initialDesign = snap.data() as DesignSettings;
+      } catch (e) {}
+    }
+
+    setQuotation({
+      ...BLANK_QUOTATION,
+      designSettings: initialDesign,
+      userId: user?.uid || PUBLIC_UID,
+      createdAt: new Date().toISOString()
+    });
+    setActiveTab('ai');
+  };
+
   const handleGoogleLogin = async () => {
     const provider = new GoogleAuthProvider();
     try {
@@ -465,6 +518,59 @@ export default function App() {
     });
   };
 
+  // Main Preview Sections
+  const renderPage1 = () => (
+    <section className="quotation-page flex flex-col items-center justify-start min-h-[297mm] relative pt-24 pb-0 bg-white">
+      <div className="absolute inset-0 z-0 pointer-events-none opacity-[0.03]" style={{ backgroundImage: "url('https://www.transparenttextures.com/patterns/cream-paper.png')" }} />
+      
+            {quotation.customImages?.filter(img => img.page === 0).map(img => (
+                <div key={img.id} className="z-50">
+                  <QuotationImage img={img} onUpdate={(u) => updateCustomImage(img.id, u)} onRemove={() => removeCustomImage(img.id)} />
+                  <PrintImage img={img} />
+                </div>
+            ))}
+      
+      <div className="relative z-10 w-full text-center space-y-12 mt-20 px-12">
+          <EditableText
+            as="h1"
+            value={quotation.clientName}
+            onChange={(val) => setQuotation({ ...quotation, clientName: val.toUpperCase() })}
+            className="font-serif text-[100px] md:text-[140px] tracking-tight text-brand-olive uppercase leading-none font-black italic select-none"
+            style={{ fontFamily: quotation.designSettings?.primaryFont }}
+          />
+          
+          <div className="space-y-6 pt-8">
+            <h2 className="font-serif text-2xl md:text-3xl tracking-[0.6em] text-brand-olive uppercase font-medium">ENGAGEMENT QUOTATION</h2>
+            <div className="w-24 h-[1px] bg-brand-olive/30 mx-auto my-6" />
+            <p className="text-xs md:text-md tracking-[0.3em] text-brand-olive/80 uppercase font-black max-w-lg mx-auto leading-relaxed">BOTH SIDES - MAHARAJA BANQUET, BADLAPUR</p>
+          </div>
+      </div>
+
+      {/* Center Branding Area */}
+      <div className="relative z-10 flex-1 flex flex-col items-center justify-center w-full">
+          <div className="opacity-90 scale-90 md:scale-110">
+            <img src={quotation.designSettings?.logoUrl || DEFAULT_DESIGN.logoUrl} className="w-56 h-auto" alt="Logo" referrerPolicy="no-referrer" />
+          </div>
+      </div>
+
+      {/* Large Hero Couple Photo at bottom */}
+      <div className="relative z-0 w-full max-w-5xl mx-auto px-0 pb-0 mt-auto overflow-hidden">
+         <div className="aspect-[4/5] w-full overflow-hidden relative">
+            <EditableText
+              value={quotation.coverImage || "https://images.unsplash.com/photo-1542045890-484196d42f53?auto=format&fit=crop&q=80&w=1200"}
+              onChange={(val) => setQuotation({ ...quotation, coverImage: val })}
+              className="absolute top-4 right-4 z-20 text-[10px] bg-brand-olive text-white p-3 rounded-full no-print opacity-0 hover:opacity-100 transition-opacity font-bold uppercase tracking-widest shadow-xl"
+            />
+            <img 
+              src={quotation.coverImage || "https://images.unsplash.com/photo-1542045890-484196d42f53?auto=format&fit=crop&q=80&w=1200"} 
+              className="w-full h-full object-cover contrast-[1.1]" 
+              referrerPolicy="no-referrer" 
+            />
+         </div>
+      </div>
+    </section>
+  );
+
   if (!isAuthReady) {
     return (
       <div className="h-screen w-screen flex flex-col items-center justify-center bg-[#f4f3ef] text-brand-green">
@@ -476,6 +582,22 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-[#f4f3ef] overflow-hidden">
+      <style>
+        {`
+          :root {
+            --color-brand-olive: ${quotation.designSettings?.accentColor || '#5a5646'};
+            --font-serif: ${quotation.designSettings?.primaryFont || "'Playfair Display', serif"};
+          }
+          .page-container {
+            font-size: ${(quotation.designSettings?.fontScale || 1) * 100}%;
+          }
+           @media print {
+            .quotation-page {
+              background-color: var(--color-brand-bg) !important;
+            }
+          }
+        `}
+      </style>
       {/* Mobile Menu Button */}
       <button 
         onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -505,20 +627,21 @@ export default function App() {
         <div className="flex px-6 pt-6 gap-2">
            {[
              { id: 'ai', icon: Mic, label: 'Chat' },
-             { id: 'settings', icon: Settings, iconLabel: 'Train', label: 'Smart Rules' },
+             { id: 'design', icon: Palette, label: 'Design' },
+             { id: 'settings', icon: Settings, label: 'Rules' },
              { id: 'history', icon: History, label: 'History' }
            ].map(tab => (
              <button
                key={tab.id}
                onClick={() => setActiveTab(tab.id as any)}
                className={cn(
-                 "flex-1 py-3 px-2 rounded-2xl text-[10px] uppercase font-bold tracking-wider transition-all border flex flex-col items-center gap-1",
+                 "flex-1 py-3 px-1 rounded-2xl text-[9px] uppercase font-bold tracking-tight transition-all border flex flex-col items-center gap-1",
                  activeTab === tab.id 
-                   ? "bg-brand-green text-white border-brand-green shadow-lg shadow-brand-green/20" 
+                   ? "bg-brand-olive text-white border-brand-olive shadow-lg shadow-brand-olive/20" 
                    : "bg-gray-50 text-gray-400 border-gray-100 hover:bg-white"
                )}
              >
-               <tab.icon size={16} />
+               <tab.icon size={14} />
                {tab.label}
              </button>
            ))}
@@ -688,6 +811,92 @@ export default function App() {
                </motion.div>
              )}
 
+             {activeTab === 'design' && (
+                <motion.div 
+                  key="design"
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  className="space-y-8"
+                >
+                  <div className="space-y-6">
+                    <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                       <Palette size={12} className="text-brand-olive" /> Typography & Theme
+                    </h3>
+                    
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-[9px] font-bold text-gray-400 uppercase">Primary Font (Serif)</label>
+                        <select 
+                          value={quotation.designSettings?.primaryFont}
+                          onChange={(e) => setQuotation({...quotation, designSettings: {...quotation.designSettings!, primaryFont: e.target.value}})}
+                          className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-serif outline-none focus:ring-2 focus:ring-brand-olive"
+                        >
+                          <option value="'Playfair Display', serif">Playfair Display</option>
+                          <option value="'Libre Baskerville', serif">Libre Baskerville</option>
+                          <option value="'Cormorant Garamond', serif">Cormorant Garamond</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[9px] font-bold text-gray-400 uppercase">Global Logo URL</label>
+                        <input 
+                          type="text"
+                          value={quotation.designSettings?.logoUrl}
+                          onChange={(e) => setQuotation({...quotation, designSettings: {...quotation.designSettings!, logoUrl: e.target.value}})}
+                          placeholder="https://..."
+                          className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl text-[10px] outline-none focus:ring-2 focus:ring-brand-olive"
+                        />
+                      </div>
+
+                      <div className="space-y-4">
+                         <div className="flex justify-between items-center">
+                            <label className="text-[9px] font-bold text-gray-400 uppercase">Typography Scale</label>
+                            <span className="text-[10px] font-mono text-brand-olive font-bold">{(quotation.designSettings?.fontScale || 1.0).toFixed(1)}x</span>
+                         </div>
+                         <input 
+                           type="range" min="0.8" max="1.5" step="0.1" 
+                           value={quotation.designSettings?.fontScale || 1}
+                           onChange={(e) => setQuotation({...quotation, designSettings: {...quotation.designSettings!, fontScale: parseFloat(e.target.value)}})}
+                           className="w-full accent-brand-olive h-1"
+                         />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[9px] font-bold text-gray-400 uppercase">Brand Accent Color</label>
+                         <div className="flex gap-2">
+                           {['#5a5646', '#806e53', '#6b705c', '#333333', '#1e293b'].map(color => (
+                             <button 
+                               key={color}
+                               onClick={() => setQuotation({...quotation, designSettings: {...quotation.designSettings!, accentColor: color}})}
+                               className={cn(
+                                 "w-9 h-9 rounded-full border-2 transition-all shadow-sm",
+                                 quotation.designSettings?.accentColor === color ? "border-brand-olive scale-110" : "border-transparent"
+                               )}
+                               style={{ backgroundColor: color }}
+                             />
+                           ))}
+                         </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-8 border-t border-gray-100 space-y-4 text-center">
+                      <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight leading-relaxed px-4 italic">
+                        "Saving as Default Template" will make this design the standard for all future quotations you create.
+                      </p>
+                      <button 
+                        onClick={saveAsMasterTemplate}
+                        disabled={status === 'saving'}
+                        className="w-full py-5 bg-black text-white rounded-[2.5rem] text-[10px] font-black uppercase tracking-[0.2em] hover:bg-brand-olive transition-all shadow-xl flex items-center justify-center gap-2"
+                      >
+                        {status === 'saving' ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
+                        Save as Default Template
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
              {activeTab === 'history' && (
                 <motion.div 
                   key="history_tab"
@@ -754,55 +963,8 @@ export default function App() {
            </div>
         </div>
 
-        <div className="max-w-[210mm] mx-auto space-y-0 shadow-2xl mb-20 print:m-0 print:shadow-none bg-[#f4f3ef]">
-          {/* PAGE 1: COVER */}
-          <section className="quotation-page flex flex-col items-center justify-start min-h-[297mm] relative pt-32 pb-0">
-            {/* Texture Overlay */}
-            <div className="absolute inset-0 z-0 pointer-events-none opacity-[0.03]" style={{ backgroundImage: "url('https://www.transparenttextures.com/patterns/cream-paper.png')" }} />
-            
-            {quotation.customImages?.filter(img => img.page === 0).map(img => (
-                <div key={img.id} className="z-50">
-                  <QuotationImage img={img} onUpdate={(u) => updateCustomImage(img.id, u)} onRemove={() => removeCustomImage(img.id)} />
-                  <PrintImage img={img} />
-                </div>
-            ))}
-            
-            <div className="relative z-10 w-full text-center space-y-32">
-                <EditableText
-                  as="h1"
-                  value={quotation.clientName}
-                  onChange={(val) => setQuotation({ ...quotation, clientName: val.toUpperCase() })}
-                  className="font-serif text-[130px] md:text-[180px] tracking-[0.1em] text-brand-olive uppercase leading-none font-bold italic"
-                />
-                
-                <div className="space-y-6">
-                  <h2 className="font-serif text-3xl md:text-5xl tracking-[0.3em] text-brand-olive uppercase font-medium">PRE-WEDDING & WEDDING</h2>
-                  <h3 className="font-serif text-4xl md:text-6xl tracking-[0.45em] text-brand-olive uppercase font-bold">QUOTATION</h3>
-                  <p className="text-xl md:text-2xl tracking-[1em] text-brand-olive/60 uppercase font-black">BOTH SIDE</p>
-                </div>
-            </div>
-
-            {/* Logo/Branding Centered Spacer - User will place PNG Logo here using Assets */}
-            <div className="relative z-10 flex-1 flex flex-col items-center justify-center w-full min-h-[250px]">
-               {/* This area is the intended spot for custom Asset logo */}
-            </div>
-
-            {/* Bottom Image Area - Matches user's image placement */}
-            <div className="relative z-10 w-full max-w-5xl mx-auto px-0 pb-0 mt-auto overflow-hidden">
-               <div className="aspect-[4/5] w-full overflow-hidden relative">
-                  <EditableText
-                    value={quotation.coverImage || "https://images.unsplash.com/photo-1542045890-484196d42f53?auto=format&fit=crop&q=80&w=1200"}
-                    onChange={(val) => setQuotation({ ...quotation, coverImage: val })}
-                    className="absolute top-4 right-4 z-20 text-[10px] bg-brand-olive text-white p-3 rounded-full no-print opacity-0 hover:opacity-100 transition-opacity font-bold uppercase tracking-widest shadow-xl"
-                  />
-                  <img 
-                    src={quotation.coverImage || "https://images.unsplash.com/photo-1542045890-484196d42f53?auto=format&fit=crop&q=80&w=1200"} 
-                    className="w-full h-full object-cover grayscale-[0.1] contrast-[1.1]" 
-                    referrerPolicy="no-referrer" 
-                  />
-               </div>
-            </div>
-          </section>
+        <div className="page-container mb-20">
+          {renderPage1()}
 
           {/* PAGE 2: ABOUT US */}
           <section className="quotation-page flex flex-col min-h-[297mm] relative overflow-hidden">

@@ -19,6 +19,14 @@ export interface CustomImage {
   page: number; // which page index
 }
 
+export interface DesignSettings {
+  primaryFont: string;
+  secondaryFont: string;
+  accentColor: string;
+  logoUrl?: string;
+  fontScale?: number;
+}
+
 export interface QuotationState {
   id?: string;
   clientName: string;
@@ -30,6 +38,7 @@ export interface QuotationState {
   createdAt: string;
   coverImage?: string;
   customImages?: CustomImage[];
+  designSettings?: DesignSettings;
   bankDetails?: {
     accountName: string;
     accountNumber: string;
