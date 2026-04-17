@@ -476,9 +476,12 @@ export default function App() {
       });
 
       const updatedData = JSON.parse(response.text || '{}');
+      console.log("AI Updated Data:", updatedData);
 
-      if (updatedData) {
+      if (updatedData && Object.keys(updatedData).length > 0) {
         setQuotation(prev => ({ ...prev, ...updatedData, userId: user?.uid }));
+      } else {
+        console.warn("AI returned empty data");
       }
       setPrompt('');
     } catch (error) {
@@ -745,18 +748,20 @@ export default function App() {
       </div>
 
       {/* Couple Photo at bottom - Full Width Flush with bottom edge */}
-      <div className="relative z-0 w-full h-[38%] min-h-[38%] overflow-hidden">
-          <div className="w-full h-full relative">
+      <div className="relative z-0 w-full h-[45%] min-h-[45%] overflow-hidden mt-auto mb-0 border-t border-gray-100">
+          <div className="w-full h-full relative group">
             <EditableText
               value={quotation.coverImage || "https://i.ibb.co/RpQpR4qT/image.png"}
               onChange={(val) => setQuotation({ ...quotation, coverImage: val })}
-              className="absolute top-4 right-4 z-20 text-[10px] bg-brand-olive text-white p-3 rounded-full no-print opacity-0 hover:opacity-100 transition-opacity font-bold uppercase tracking-widest shadow-xl"
+              className="absolute top-8 right-8 z-30 text-[10px] bg-brand-olive text-white p-4 rounded-full no-print opacity-0 group-hover:opacity-100 transition-opacity font-black uppercase tracking-[0.2em] shadow-2xl"
             />
             <img 
-              src={quotation.coverImage || "https://i.ibb.co/RpQpR4qT/image.png"} 
-              className="w-full h-full object-cover object-[center_35%]" 
+              src={quotation.coverImage || "https://images.unsplash.com/photo-1519741497674-611481863552?q=80&w=2000"} 
+              className="w-full h-full object-cover object-center" 
               referrerPolicy="no-referrer" 
+              alt="Cover"
             />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent pointer-events-none" />
           </div>
       </div>
     </section>
@@ -1005,10 +1010,13 @@ export default function App() {
                     <button
                       onClick={() => processAiCommand(prompt)}
                       disabled={!prompt.trim() || isAiLoading}
-                      className="w-full py-5 bg-brand-green text-white rounded-[2rem] font-bold text-sm shadow-xl shadow-brand-green/30 hover:shadow-brand-green/40 active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+                      className={cn(
+                        "w-full py-6 text-white rounded-[2rem] font-black text-[12px] uppercase tracking-[0.2em] shadow-2xl transition-all flex items-center justify-center gap-4 disabled:opacity-50",
+                        isAiLoading ? "bg-gray-400" : "bg-gradient-to-r from-brand-olive to-brand-accent hover:scale-[1.02] active:scale-[0.98]"
+                      )}
                     >
-                      {isAiLoading ? <Loader2 className="animate-spin" size={20} /> : <Send size={20} />}
-                      {isAiLoading ? 'AI is dreaming...' : 'Update Quotation'}
+                      {isAiLoading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle2 size={20} />}
+                      {isAiLoading ? 'AI is Processing...' : 'Generate Quotation Now'}
                     </button>
                     
                     {/* Visual Assets Manager */}
