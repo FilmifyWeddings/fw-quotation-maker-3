@@ -365,17 +365,29 @@ export default function App() {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = false;
-      recognitionRef.current.interimResults = false;
+      recognitionRef.current.continuous = true;
+      recognitionRef.current.interimResults = true;
       recognitionRef.current.lang = 'hi-IN';
 
       recognitionRef.current.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        setPrompt(transcript);
-        processAiCommand(transcript);
+        let interimTranscript = '';
+        let finalTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          } else {
+            interimTranscript += event.results[i][0].transcript;
+          }
+        }
+        
+        const currentText = finalTranscript || interimTranscript;
+        setPrompt(currentText);
       };
 
-      recognitionRef.current.onend = () => setIsListening(false);
+      recognitionRef.current.onend = () => {
+        setIsListening(false);
+      };
     }
   }, []);
 
@@ -672,7 +684,7 @@ export default function App() {
 
   // Main Preview Sections
   const renderPage1 = () => (
-    <section className="quotation-page flex flex-col items-center justify-start relative bg-white overflow-hidden h-[297mm]" onClick={() => setSelectedElement(null)}>
+    <section className="quotation-page flex flex-col items-center justify-between relative bg-white overflow-hidden h-[297mm] shadow-none border-none p-0" onClick={() => setSelectedElement(null)}>
       <div className="absolute inset-0 z-0 pointer-events-none opacity-[0.03]" style={{ backgroundImage: "url('https://www.transparenttextures.com/patterns/cream-paper.png')" }} />
       
       {/* Background/Custom Assets Overlay */}
@@ -702,38 +714,38 @@ export default function App() {
           </div>
       ))}
       
-      {/* Page 1 Header based on User Reference */}
-      <div className="relative z-10 w-full text-center px-12 pt-32 space-y-24">
-          <div className="space-y-6">
+      {/* Top Section - Spaced correctly */}
+      <div className="relative z-10 w-full text-center px-12 pt-32 space-y-16">
+          <div className="space-y-4">
             <EditableText
               as="h1"
               value={quotation.clientName}
               onChange={(val) => setQuotation({ ...quotation, clientName: val.toUpperCase() })}
-              className="font-serif text-[110px] tracking-tight text-brand-olive uppercase leading-none font-black select-none"
+              className="font-serif text-[115px] tracking-tight text-[#5a5646] uppercase leading-none font-bold select-none"
               style={{ fontFamily: quotation.designSettings?.primaryFont }}
             />
           </div>
           
           <div className="space-y-6 pt-10">
             <h2 className="font-sans text-2xl tracking-[0.8em] text-brand-dark uppercase font-medium">ENGAGEMENT QUOTATION</h2>
-            <div className="space-y-4 pt-4">
-               <p className="text-[11px] tracking-[0.4em] text-gray-500 uppercase font-black max-w-lg mx-auto leading-relaxed">BOTH SIDES - MAHARAJA BANQUET, BADLAPUR</p>
+            <div className="space-y-4 pt-2">
+               <p className="text-[11px] tracking-[0.45em] text-gray-500 uppercase font-black max-w-lg mx-auto leading-relaxed">BOTH SIDES - MAHARAJA BANQUET, BADLAPUR</p>
             </div>
           </div>
       </div>
 
-      {/* Center Branding Area */}
-      <div className="relative z-10 py-32 flex flex-col items-center justify-center flex-1">
+      {/* Center Branding Area - Positioned to take remaining space */}
+      <div className="relative z-10 flex flex-col items-center justify-center flex-grow -mt-20">
           <img 
             src={quotation.designSettings?.logoUrl || DEFAULT_DESIGN.logoUrl} 
-            className="w-56 h-auto opacity-70" 
+            className="w-52 h-auto opacity-80" 
             alt="Logo" 
             referrerPolicy="no-referrer" 
           />
       </div>
 
-      {/* Couple Photo at bottom - Full Width Flush */}
-      <div className="relative z-0 w-full mt-auto mb-0 overflow-hidden h-[40%]">
+      {/* Couple Photo at bottom - Full Width Flush with bottom edge */}
+      <div className="relative z-0 w-full h-[38%] min-h-[38%] overflow-hidden">
           <div className="w-full h-full relative">
             <EditableText
               value={quotation.coverImage || "https://i.ibb.co/RpQpR4qT/image.png"}
@@ -742,7 +754,7 @@ export default function App() {
             />
             <img 
               src={quotation.coverImage || "https://i.ibb.co/RpQpR4qT/image.png"} 
-              className="w-full h-full object-cover object-center scale-105" 
+              className="w-full h-full object-cover object-[center_35%]" 
               referrerPolicy="no-referrer" 
             />
           </div>
@@ -974,6 +986,12 @@ export default function App() {
                         placeholder="E.g. 'Rahul, 1.5L, Haldi 1 Jan, apply Cinematic rules...'"
                         className="w-full h-40 p-5 text-sm bg-gray-50 border border-gray-200 rounded-[2rem] focus:ring-4 focus:ring-brand-green/10 focus:border-brand-green transition-all pr-14 shadow-inner"
                       />
+                      {isListening && (
+                        <div className="absolute bottom-4 left-4 flex items-center gap-2">
+                          <div className="w-2 h-2 bg-red-500 rounded-full animate-ping" />
+                          <span className="text-[10px] text-red-500 font-bold uppercase tracking-widest">Listening...</span>
+                        </div>
+                      )}
                       <button 
                         onClick={toggleListening}
                         className={cn(
